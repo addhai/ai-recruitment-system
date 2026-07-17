@@ -40,9 +40,10 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
 
-    DINGTALK_APP_KEY: Optional[str] = None
-    DINGTALK_APP_SECRET: Optional[str] = None
-    DINGTALK_ROBOT_WEBHOOK: Optional[str] = None
+    # 飞书集成
+    FEISHU_APP_ID: Optional[str] = None
+    FEISHU_APP_SECRET: Optional[str] = None
+    FEISHU_WEBHOOK_URL: Optional[str] = None  # 机器人webhook
 
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"

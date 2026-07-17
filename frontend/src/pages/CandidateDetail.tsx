@@ -1,6 +1,57 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, FileText, Award, Target, Users, Play } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Award, Target, Users, Play, Loader2, AlertCircle } from 'lucide-react';
+import { getCandidate, getResume, runWorkflow } from '../services/candidates';
+import { apiRequest } from '../services/api';
+import type { Candidate } from '../types';
+
+interface InterviewItem {
+  id: number;
+  candidate_id: number;
+  position: string;
+  round: number;
+  status: string;
+  interviewer_id: number | null;
+  scheduled_at: string | null;
+  completed_at: string | null;
+  score: number | null;
+  feedback: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+interface EvaluationItem {
+  id: number;
+  candidate_id: number;
+  evaluator_id: number;
+  dimension: string;
+  score: number;
+  comment: string | null;
+  created_at: string;
+}
+
+interface WorkflowResult {
+  candidate_id: number;
+  candidate_name: string;
+  position: string | null;
+  final_decision: string;
+  overall_score: number;
+  skill_match_score: number;
+  experience_match_score: number;
+  education_match_score: number;
+  culture_match_score: number;
+  workflow_progress: number;
+  current_step: string;
+  analysis: {
+    skills_analysis: string;
+    experience_analysis: string;
+    education_analysis: string;
+    culture_analysis: string;
+    recommendation: string;
+    [key: string]: any;
+  };
+  completed_at: string;
+}
 
 const CandidateDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -9,39 +60,74 @@ const CandidateDetail: React.FC = () => {
   const [runningWorkflow, setRunningWorkflow] = useState(false);
   const [workflowProgress, setWorkflowProgress] = useState(0);
 
-  const candidates = [
-    { id: 1, name: '张明', email: 'zhangming@example.com', phone: '13800138001', position: '高级前端工程师', status: 'interviewed', source: '拉勾网', experience: '5年', education: '本科', school: '北京邮电大学', major: '计算机科学与技术', skills: ['React', 'TypeScript', 'Node.js', 'Vue', 'Webpack', 'Git'] },
-    { id: 2, name: '李华', email: 'lihua@example.com', phone: '13800138002', position: '产品经理', status: 'pending', source: 'BOSS直聘', experience: '3年', education: '硕士', school: '复旦大学', major: '工商管理', skills: ['需求分析', '产品设计', '数据分析', '项目管理'] },
-    { id: 3, name: '王芳', email: 'wangfang@example.com', phone: '13800138003', position: 'UI设计师', status: 'hired', source: '内部推荐', experience: '4年', education: '本科', school: '中央美术学院', major: '视觉传达', skills: ['Figma', 'Sketch', 'UI设计', '交互设计'] },
-    { id: 4, name: '刘伟', email: 'liuwei@example.com', phone: '13800138004', position: '后端开发工程师', status: 'pending', source: '智联招聘', experience: '6年', education: '本科', school: '上海交通大学', major: '软件工程', skills: ['Java', 'Spring Boot', 'MySQL', 'Redis', '微服务'] },
-    { id: 5, name: '陈静', email: 'chenjing@example.com', phone: '13800138005', position: 'Java开发工程师', status: 'interviewed', source: '猎头推荐', experience: '4年', education: '本科', school: '浙江大学', major: '计算机科学', skills: ['Java', 'JVM', '分布式', 'Docker', 'Kubernetes'] },
-    { id: 6, name: '赵磊', email: 'zhaolei@example.com', phone: '13800138006', position: '测试工程师', status: 'rejected', source: '拉勾网', experience: '3年', education: '本科', school: '华中科技大学', major: '软件工程', skills: ['自动化测试', '性能测试', 'Selenium', 'JUnit'] },
-  ];
+  const [candidate, setCandidate] = useState<Candidate | null>(null);
+  const [resume, setResume] = useState<any>(null);
+  const [interviews, setInterviews] = useState<InterviewItem[]>([]);
+  const [evaluations, setEvaluations] = useState<EvaluationItem[]>([]);
+  const [workflowResult, setWorkflowResult] = useState<WorkflowResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
 
-  const candidate = candidates.find(c => c.id === Number(id)) || candidates[0];
+  useEffect(() => {
+    if (!id) return;
+    const fetchData = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const candId = Number(id);
+        // 并行获取候选人基本信息、简历、面试记录、评估记录
+        const [cand, ints, evals] = await Promise.all([
+          getCandidate(candId),
+          apiRequest<InterviewItem[]>(`/interviews/?candidate_id=${candId}`).catch(() => []),
+          apiRequest<EvaluationItem[]>(`/evaluations/?candidate_id=${candId}`).catch(() => []),
+        ]);
+        setCandidate(cand);
+        setInterviews(ints);
+        setEvaluations(evals);
 
-  const runWorkflow = () => {
+        // 简历获取失败不阻塞页面
+        try {
+          const res = await getResume(candId);
+          setResume(res);
+        } catch {
+          setResume(null);
+        }
+      } catch (err: any) {
+        setError(err.message || '加载候选人详情失败');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [id]);
+
+  const runWorkflowHandler = async () => {
+    if (!candidate) return;
     setRunningWorkflow(true);
     setWorkflowProgress(0);
-    
-    const steps = [
-      { progress: 10, step: '简历解析中...' },
-      { progress: 25, step: '技能匹配分析...' },
-      { progress: 40, step: '文化匹配评估...' },
-      { progress: 55, step: '生成测评问卷...' },
-      { progress: 70, step: '面试问题生成...' },
-      { progress: 85, step: '综合评估中...' },
-      { progress: 100, step: '评估完成' },
+    setWorkflowError(null);
+    setWorkflowResult(null);
+
+    // 前端进度模拟（仅用于UI反馈，实际结果以API返回为准）
+    const progressSteps = [
+      { progress: 15, delay: 400 },
+      { progress: 35, delay: 800 },
+      { progress: 55, delay: 1200 },
+      { progress: 75, delay: 1600 },
     ];
-    
-    steps.forEach((item, index) => {
-      setTimeout(() => {
-        setWorkflowProgress(item.progress);
-        if (index === steps.length - 1) {
-          setTimeout(() => setRunningWorkflow(false), 500);
-        }
-      }, (index + 1) * 800);
-    });
+    progressSteps.forEach((s) => setTimeout(() => setWorkflowProgress(s.progress), s.delay));
+
+    try {
+      const positionRequirements = candidate.position || '';
+      const result = await runWorkflow(candidate.id, positionRequirements);
+      setWorkflowResult(result);
+      setWorkflowProgress(100);
+    } catch (err: any) {
+      setWorkflowError(err.message || 'AI 评估失败，请检查后端服务是否启动');
+    } finally {
+      setTimeout(() => setRunningWorkflow(false), 500);
+    }
   };
 
   const tabs = [
@@ -56,6 +142,7 @@ const CandidateDetail: React.FC = () => {
     const map: Record<string, string> = {
       pending: '待处理',
       interviewed: '面试中',
+      interviewing: '面试中',
       hired: '已录用',
       rejected: '已拒绝',
     };
@@ -65,12 +152,66 @@ const CandidateDetail: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'hired': return 'bg-green-100 text-green-700';
-      case 'interviewed': return 'bg-blue-100 text-blue-700';
+      case 'interviewed':
+      case 'interviewing': return 'bg-blue-100 text-blue-700';
       case 'pending': return 'bg-amber-100 text-amber-700';
       case 'rejected': return 'bg-red-100 text-red-700';
       default: return 'bg-slate-100 text-slate-700';
     }
   };
+
+  // 从简历解析数据中提取展示信息
+  const parsedData = resume?.parsed_data || (resume as any)?.parsed_data || null;
+  const skills: string[] = (() => {
+    if (resume?.skills && Array.isArray(resume.skills)) return resume.skills;
+    if (parsedData?.skills_technical && Array.isArray(parsedData.skills_technical)) return parsedData.skills_technical;
+    if (parsedData?.skills && Array.isArray(parsedData.skills)) return parsedData.skills;
+    if (parsedData?.skills && typeof parsedData.skills === 'object') {
+      const all = Object.values(parsedData.skills).flat();
+      return all.filter((s: any) => typeof s === 'string');
+    }
+    return [];
+  })();
+  const experience = resume?.experience || parsedData?.experience_text || '';
+  const education = resume?.education || parsedData?.education_text || '';
+  const experienceList: any[] = Array.isArray(parsedData?.experience) ? parsedData.experience : [];
+  const educationList: any[] = Array.isArray(parsedData?.education) ? parsedData.education : [];
+  const projectList: any[] = Array.isArray(parsedData?.projects) ? parsedData.projects : [];
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+          <Loader2 className="animate-spin mx-auto text-blue-500 mb-3" size={32} />
+          <p className="text-slate-500">加载候选人详情...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !candidate) {
+    return (
+      <div className="space-y-6">
+        <button
+          onClick={() => navigate('/candidates')}
+          className="flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors"
+        >
+          <ArrowLeft size={18} />
+          <span>返回列表</span>
+        </button>
+        <div className="bg-white rounded-xl shadow-sm border border-red-200 p-12 text-center">
+          <AlertCircle className="mx-auto text-red-500 mb-3" size={32} />
+          <p className="text-red-600">{error || '未找到候选人'}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 工作流评分数据
+  const skillScore = workflowResult?.skill_match_score ?? 0;
+  const expScore = workflowResult?.experience_match_score ?? 0;
+  const cultureScore = workflowResult?.culture_match_score ?? 0;
+  const overallScore = workflowResult?.overall_score ?? 0;
 
   return (
     <div className="space-y-6">
@@ -95,20 +236,20 @@ const CandidateDetail: React.FC = () => {
                   {getStatusText(candidate.status)}
                 </span>
               </div>
-              <p className="text-slate-600 mt-1">{candidate.position}</p>
+              <p className="text-slate-600 mt-1">{candidate.position || '未填写职位'}</p>
               <div className="flex items-center gap-4 mt-2 text-sm text-slate-500">
-                <span>📧 {candidate.email}</span>
-                <span>📱 {candidate.phone}</span>
-                <span>📍 来源: {candidate.source}</span>
+                <span>📧 {candidate.email || '未填写'}</span>
+                <span>📱 {candidate.phone || '未填写'}</span>
+                <span>📍 来源: {candidate.source || '未填写'}</span>
               </div>
             </div>
           </div>
           <button
-            onClick={runWorkflow}
+            onClick={runWorkflowHandler}
             disabled={runningWorkflow}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm disabled:opacity-50"
           >
-            <Play size={16} />
+            {runningWorkflow ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} />}
             {runningWorkflow ? '分析中...' : '启动AI评估'}
           </button>
         </div>
@@ -125,6 +266,16 @@ const CandidateDetail: React.FC = () => {
               className="bg-gradient-to-r from-blue-500 to-indigo-600 h-2 rounded-full transition-all duration-500"
               style={{ width: `${workflowProgress}%` }}
             ></div>
+          </div>
+        </div>
+      )}
+
+      {workflowError && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertCircle className="text-red-500 mt-0.5" size={18} />
+          <div className="flex-1">
+            <p className="text-sm text-red-700 font-medium">AI评估失败</p>
+            <p className="text-xs text-red-600 mt-1">{workflowError}</p>
           </div>
         </div>
       )}
@@ -160,19 +311,15 @@ const CandidateDetail: React.FC = () => {
                   <div className="grid grid-cols-2 gap-4 text-sm">
                     <div className="p-3 bg-slate-50 rounded-lg">
                       <p className="text-slate-500">工作经验</p>
-                      <p className="font-medium text-slate-800 mt-1">{candidate.experience}</p>
+                      <p className="font-medium text-slate-800 mt-1">{experience || '—'}</p>
                     </div>
                     <div className="p-3 bg-slate-50 rounded-lg">
                       <p className="text-slate-500">学历</p>
-                      <p className="font-medium text-slate-800 mt-1">{candidate.education}</p>
+                      <p className="font-medium text-slate-800 mt-1">{education || '—'}</p>
                     </div>
-                    <div className="p-3 bg-slate-50 rounded-lg">
-                      <p className="text-slate-500">毕业院校</p>
-                      <p className="font-medium text-slate-800 mt-1">{candidate.school}</p>
-                    </div>
-                    <div className="p-3 bg-slate-50 rounded-lg">
-                      <p className="text-slate-500">专业</p>
-                      <p className="font-medium text-slate-800 mt-1">{candidate.major}</p>
+                    <div className="p-3 bg-slate-50 rounded-lg col-span-2">
+                      <p className="text-slate-500">简历文件</p>
+                      <p className="font-medium text-slate-800 mt-1">{resume?.file_name || candidate.resume_file || '未上传'}</p>
                     </div>
                   </div>
                 </div>
@@ -182,57 +329,68 @@ const CandidateDetail: React.FC = () => {
                     <Award className="text-blue-600" size={18} />
                     技能标签
                   </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {candidate.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-sm"
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
+                  {skills.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {skills.map((skill, idx) => (
+                        <span
+                          key={`${skill}-${idx}`}
+                          className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-full text-sm"
+                        >
+                          {typeof skill === 'string' ? skill : JSON.stringify(skill)}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-400">暂无技能数据，请上传简历后查看</p>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-6">
                 <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl">
                   <h3 className="font-semibold text-slate-800 mb-3">匹配度评分</h3>
-                  <div className="space-y-3">
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-slate-600">技能匹配</span>
-                        <span className="font-medium text-slate-800">85%</span>
+                  {workflowResult ? (
+                    <div className="space-y-3">
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-slate-600">技能匹配</span>
+                          <span className="font-medium text-slate-800">{skillScore}%</span>
+                        </div>
+                        <div className="w-full bg-white/50 rounded-full h-2">
+                          <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${skillScore}%` }}></div>
+                        </div>
                       </div>
-                      <div className="w-full bg-white/50 rounded-full h-2">
-                        <div className="bg-blue-500 h-2 rounded-full" style={{ width: '85%' }}></div>
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-slate-600">经验匹配</span>
+                          <span className="font-medium text-slate-800">{expScore}%</span>
+                        </div>
+                        <div className="w-full bg-white/50 rounded-full h-2">
+                          <div className="bg-green-500 h-2 rounded-full" style={{ width: `${expScore}%` }}></div>
+                        </div>
+                      </div>
+                      <div>
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="text-slate-600">文化匹配</span>
+                          <span className="font-medium text-slate-800">{cultureScore}%</span>
+                        </div>
+                        <div className="w-full bg-white/50 rounded-full h-2">
+                          <div className="bg-purple-500 h-2 rounded-full" style={{ width: `${cultureScore}%` }}></div>
+                        </div>
+                      </div>
+                      <div className="pt-3 border-t border-white/50">
+                        <div className="flex justify-between">
+                          <span className="text-slate-600 font-medium">综合评分</span>
+                          <span className="text-xl font-bold text-blue-600">{overallScore}%</span>
+                        </div>
+                        <div className="mt-2 text-sm text-slate-700">
+                          决策：<span className="font-medium">{workflowResult.final_decision}</span>
+                        </div>
                       </div>
                     </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-slate-600">经验匹配</span>
-                        <span className="font-medium text-slate-800">80%</span>
-                      </div>
-                      <div className="w-full bg-white/50 rounded-full h-2">
-                        <div className="bg-green-500 h-2 rounded-full" style={{ width: '80%' }}></div>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="text-slate-600">文化匹配</span>
-                        <span className="font-medium text-slate-800">75%</span>
-                      </div>
-                      <div className="w-full bg-white/50 rounded-full h-2">
-                        <div className="bg-purple-500 h-2 rounded-full" style={{ width: '75%' }}></div>
-                      </div>
-                    </div>
-                    <div className="pt-3 border-t border-white/50">
-                      <div className="flex justify-between">
-                        <span className="text-slate-600 font-medium">综合评分</span>
-                        <span className="text-xl font-bold text-blue-600">80%</span>
-                      </div>
-                    </div>
-                  </div>
+                  ) : (
+                    <p className="text-sm text-slate-500">点击右上角"启动AI评估"获取匹配度评分</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -241,107 +399,208 @@ const CandidateDetail: React.FC = () => {
           {activeTab === 'resume' && (
             <div className="prose max-w-none">
               <h3 className="font-semibold text-slate-800 mb-4">简历内容</h3>
-              <div className="bg-slate-50 rounded-lg p-6 text-slate-600">
-                <h4 className="font-medium text-slate-800 mb-2">工作经历</h4>
-                <ul className="list-disc pl-5 space-y-2 mb-4">
-                  <li>{parseInt(candidate.experience) - 2} - {parseInt(candidate.experience)}年 某科技公司 {candidate.position}</li>
-                  <li>{parseInt(candidate.experience) - 4} - {parseInt(candidate.experience) - 2}年 某互联网公司 开发工程师</li>
-                  <li>{parseInt(candidate.experience) - 6} - {parseInt(candidate.experience) - 4}年 某软件公司 初级开发</li>
-                </ul>
-                <h4 className="font-medium text-slate-800 mb-2">项目经验</h4>
-                <ul className="list-disc pl-5 space-y-2">
-                  <li>企业管理系统架构设计与开发</li>
-                  <li>电商平台性能优化</li>
-                  <li>组件库建设与维护</li>
-                </ul>
-              </div>
+              {resume ? (
+                <div className="bg-slate-50 rounded-lg p-6 text-slate-600 space-y-4">
+                  <div>
+                    <p className="text-xs text-slate-400 mb-1">简历文件: {resume.file_name}</p>
+                  </div>
+
+                  {educationList.length > 0 && (
+                    <>
+                      <h4 className="font-medium text-slate-800">教育背景</h4>
+                      <ul className="list-disc pl-5 space-y-1">
+                        {educationList.map((edu, idx) => (
+                          <li key={idx}>
+                            {typeof edu === 'string' ? edu : Object.entries(edu).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {experienceList.length > 0 && (
+                    <>
+                      <h4 className="font-medium text-slate-800">工作经历</h4>
+                      <ul className="list-disc pl-5 space-y-1">
+                        {experienceList.map((exp, idx) => (
+                          <li key={idx}>
+                            {typeof exp === 'string' ? exp : Object.entries(exp).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {projectList.length > 0 && (
+                    <>
+                      <h4 className="font-medium text-slate-800">项目经验</h4>
+                      <ul className="list-disc pl-5 space-y-1">
+                        {projectList.map((proj, idx) => (
+                          <li key={idx}>
+                            {typeof proj === 'string' ? proj : Object.entries(proj).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+
+                  {parsedData?.basic_info && (
+                    <>
+                      <h4 className="font-medium text-slate-800">基本信息</h4>
+                      <p className="text-sm">
+                        {typeof parsedData.basic_info === 'string'
+                          ? parsedData.basic_info
+                          : Object.entries(parsedData.basic_info).map(([k, v]) => `${k}: ${v}`).join(' | ')}
+                      </p>
+                    </>
+                  )}
+
+                  {resume.parsed_text && (
+                    <>
+                      <h4 className="font-medium text-slate-800">简历原文</h4>
+                      <pre className="text-xs whitespace-pre-wrap bg-white border border-slate-200 rounded p-3 max-h-96 overflow-y-auto">
+                        {resume.parsed_text}
+                      </pre>
+                    </>
+                  )}
+
+                  {educationList.length === 0 && experienceList.length === 0 && projectList.length === 0 && !resume.parsed_text && (
+                    <p className="text-slate-400">暂无详细解析数据</p>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-slate-50 rounded-lg p-6 text-center">
+                  <FileText className="mx-auto text-slate-400 mb-2" size={32} />
+                  <p className="text-slate-500">该候选人尚未上传简历</p>
+                  <button
+                    onClick={() => navigate('/candidates')}
+                    className="mt-3 text-sm text-blue-600 hover:text-blue-700"
+                  >
+                    去候选人列表上传
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'interviews' && (
             <div className="space-y-4">
-              <div className="flex items-center gap-2 p-4 bg-slate-50 rounded-lg">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Calendar className="text-blue-600" size={18} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">第一轮技术面试</p>
-                  <p className="text-sm text-slate-500">2026-07-15 14:00 · 面试官：李工</p>
-                </div>
-                <span className="px-2.5 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-                  已通过
-                </span>
-              </div>
-              <div className="flex items-center gap-2 p-4 bg-slate-50 rounded-lg">
-                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center">
-                  <Users className="text-amber-600" size={18} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">第二轮综合面试</p>
-                  <p className="text-sm text-slate-500">2026-07-18 10:00 · 面试官：王总监</p>
-                </div>
-                <span className="px-2.5 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-medium">
-                  待面试
-                </span>
-              </div>
+              {interviews.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">暂无面试记录</p>
+              ) : (
+                interviews.map((iv) => {
+                  const isCompleted = iv.status === 'completed';
+                  const iconBg = isCompleted ? 'bg-green-100' : 'bg-blue-100';
+                  const iconColor = isCompleted ? 'text-green-600' : 'text-blue-600';
+                  const Icon = isCompleted ? Calendar : Users;
+                  const tagBg = isCompleted ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700';
+                  const tagText = isCompleted ? '已通过' : '待面试';
+                  return (
+                    <div key={iv.id} className="flex items-center gap-2 p-4 bg-slate-50 rounded-lg">
+                      <div className={`w-10 h-10 ${iconBg} rounded-full flex items-center justify-center`}>
+                        <Icon className={iconColor} size={18} />
+                      </div>
+                      <div className="flex-1">
+                        <p className="font-medium text-slate-800">第{iv.round}轮面试 - {iv.position}</p>
+                        <p className="text-sm text-slate-500">
+                          {iv.scheduled_at ? new Date(iv.scheduled_at).toLocaleString('zh-CN') : '时间未定'} ·
+                          面试官ID: {iv.interviewer_id || '待定'}
+                          {iv.score ? ` · 分数: ${iv.score}` : ''}
+                        </p>
+                        {iv.feedback && (
+                          <p className="text-xs text-slate-500 mt-1">反馈: {iv.feedback}</p>
+                        )}
+                      </div>
+                      <span className={`px-2.5 py-1 ${tagBg} rounded-full text-xs font-medium`}>{tagText}</span>
+                    </div>
+                  );
+                })
+              )}
             </div>
           )}
 
           {activeTab === 'evaluations' && (
             <div className="space-y-4">
-              <div className="p-4 border border-slate-200 rounded-lg">
-                <div className="flex justify-between items-start mb-2">
-                  <h4 className="font-medium text-slate-800">技术能力评估</h4>
-                  <span className="text-lg font-bold text-blue-600">85分</span>
-                </div>
-                <p className="text-sm text-slate-500">评估人：李工 · 2026-07-15</p>
-                <p className="text-sm text-slate-600 mt-2">候选人技术基础扎实，对{String(candidate.skills[0])}和{String(candidate.skills[1])}有深入理解，项目经验丰富。</p>
-              </div>
+              {evaluations.length === 0 ? (
+                <p className="text-center text-slate-400 py-8">暂无评估记录</p>
+              ) : (
+                evaluations.map((ev) => (
+                  <div key={ev.id} className="p-4 border border-slate-200 rounded-lg">
+                    <div className="flex justify-between items-start mb-2">
+                      <h4 className="font-medium text-slate-800">{ev.dimension}</h4>
+                      <span className="text-lg font-bold text-blue-600">{ev.score}分</span>
+                    </div>
+                    <p className="text-sm text-slate-500">评估人ID: {ev.evaluator_id} · {new Date(ev.created_at).toLocaleDateString('zh-CN')}</p>
+                    {ev.comment && (
+                      <p className="text-sm text-slate-600 mt-2">{ev.comment}</p>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           )}
 
           {activeTab === 'workflow' && (
             <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <FileText className="text-green-600" size={18} />
+              {workflowResult ? (
+                <>
+                  <div className="p-4 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="font-semibold text-slate-800">最终决策</h4>
+                      <span className="text-2xl font-bold text-blue-600">{workflowResult.overall_score}%</span>
+                    </div>
+                    <p className="text-slate-700 font-medium">{workflowResult.final_decision}</p>
+                    <p className="text-xs text-slate-500 mt-1">完成时间: {new Date(workflowResult.completed_at).toLocaleString('zh-CN')}</p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: '简历解析', icon: FileText, done: true },
+                      { label: '技能匹配评估', icon: Target, done: true, score: workflowResult.skill_match_score },
+                      { label: '文化匹配评估', icon: Users, done: true, score: workflowResult.culture_match_score },
+                      { label: '经验匹配评估', icon: Award, done: true, score: workflowResult.experience_match_score },
+                    ].map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-4 p-4 border border-slate-200 rounded-lg">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${item.done ? 'bg-green-100' : 'bg-blue-100'}`}>
+                          <item.icon className={item.done ? 'text-green-600' : 'text-blue-600'} size={18} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-800">{item.label}</p>
+                          <p className="text-sm text-slate-500">
+                            {item.done ? (item.score !== undefined ? `匹配度 ${item.score}%` : '已完成') : '进行中'}
+                          </p>
+                        </div>
+                        <span className={`text-sm ${item.done ? 'text-green-600' : 'text-blue-600'}`}>
+                          {item.done ? '✓' : '...'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {workflowResult.analysis && (
+                    <div className="p-4 border border-slate-200 rounded-lg space-y-2">
+                      <h4 className="font-medium text-slate-800">分析详情</h4>
+                      <p className="text-sm text-slate-600">{workflowResult.analysis.skills_analysis}</p>
+                      <p className="text-sm text-slate-600">{workflowResult.analysis.experience_analysis}</p>
+                      <p className="text-sm text-slate-600">{workflowResult.analysis.education_analysis}</p>
+                      <p className="text-sm text-slate-600">{workflowResult.analysis.culture_analysis}</p>
+                      <p className="text-sm text-slate-700 font-medium pt-2 border-t border-slate-100">建议: {workflowResult.analysis.recommendation}</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <Play className="mx-auto text-slate-400 mb-3" size={32} />
+                  <p className="text-slate-500">尚未运行AI评估工作流</p>
+                  <button
+                    onClick={runWorkflowHandler}
+                    disabled={runningWorkflow}
+                    className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {runningWorkflow ? '分析中...' : '启动AI评估'}
+                  </button>
                 </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">简历解析</p>
-                  <p className="text-sm text-slate-500">已完成</p>
-                </div>
-                <span className="text-green-600 text-sm">✓</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <Target className="text-green-600" size={18} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">技能匹配评估</p>
-                  <p className="text-sm text-slate-500">匹配度 85%</p>
-                </div>
-                <span className="text-green-600 text-sm">✓</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
-                  <Users className="text-green-600" size={18} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">文化匹配评估</p>
-                  <p className="text-sm text-slate-500">匹配度 75%</p>
-                </div>
-                <span className="text-green-600 text-sm">✓</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                  <Award className="text-blue-600" size={18} />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-slate-800">最终决策</p>
-                  <p className="text-sm text-slate-500">推荐录用</p>
-                </div>
-                <span className="text-blue-600 text-sm">进行中</span>
-              </div>
+              )}
             </div>
           )}
         </div>

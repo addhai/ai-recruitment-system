@@ -1,21 +1,159 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Bell, Search, ChevronDown, X, Settings, LogOut } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { API_BASE_URL } from '../../services/api';
+
+// SSE 通知类型
+interface SSENotification {
+  id: number;
+  type: string;
+  title: string;
+  desc: string;
+  time: string;
+  read: boolean;
+}
+
+// Toast 状态
+type ToastState = { title: string; desc: string; type: string } | null;
+
+// SSE 消息类型对应的通知标题
+const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+  workflow_progress: '工作流进度',
+  interview_scheduled: '面试安排',
+  interview_completed: '面试完成',
+  questionnaire_generated: '问卷生成',
+  questionnaire_submitted: '问卷提交',
+  hiring_decision: '招聘决策',
+  candidate_added: '新候选人',
+  candidate_status_changed: '状态变更',
+  evaluation_added: '评估完成',
+  system_message: '系统消息',
+};
+
+// 将 SSE 原始消息解析为通知对象
+function parseSSEMessage(data: string): SSENotification | null {
+  try {
+    const msg = JSON.parse(data);
+    const title = NOTIFICATION_TYPE_LABELS[msg.type] || '系统通知';
+    let desc = '';
+    switch (msg.type) {
+      case 'workflow_progress':
+        desc = `进度: ${msg.progress}% - ${msg.step}`;
+        break;
+      case 'hiring_decision':
+        desc = `决策: ${msg.decision}（评分: ${msg.overall_score}）`;
+        break;
+      case 'candidate_added':
+        desc = `候选人: ${msg.candidate_name}`;
+        break;
+      case 'candidate_status_changed':
+        desc = `状态: ${msg.old_status} → ${msg.new_status}`;
+        break;
+      case 'interview_scheduled':
+        desc = `第${msg.round}轮面试已安排`;
+        break;
+      case 'interview_completed':
+        desc = `面试评分: ${msg.score}`;
+        break;
+      case 'system_message':
+        desc = msg.message || '';
+        break;
+      default:
+        desc = msg.candidate_name || JSON.stringify(msg).slice(0, 80);
+    }
+    return {
+      id: Date.now() + Math.random(),
+      type: msg.type,
+      title,
+      desc,
+      time: '刚刚',
+      read: false,
+    };
+  } catch {
+    return null;
+  }
+}
 
 const Header: React.FC<{ title: string }> = ({ title }) => {
   const { user, logout } = useAuth();
-  const [notifications] = useState(3);
+  const [sseNotifications, setSseNotifications] = useState<SSENotification[]>([]);
+  const [toast, setToast] = useState<ToastState>(null);
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotificationPanel, setShowNotificationPanel] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
 
-  const notificationList = [
-    { id: 1, type: 'candidate', title: '新候选人申请', desc: '王芳申请了UI设计师职位', time: '5分钟前', read: false },
-    { id: 2, type: 'interview', title: '面试安排变更', desc: '李华的面试时间调整为明天10:00', time: '30分钟前', read: false },
-    { id: 3, type: 'evaluation', title: '评估已完成', desc: '张明的技术评估已完成，评分85分', time: '1小时前', read: true },
-  ];
+  const unreadCount = sseNotifications.filter((n) => !n.read).length;
+
+  // 显示 toast 通知（4 秒后自动消失）
+  const showNotification = useCallback((notification: SSENotification) => {
+    setToast({ title: notification.title, desc: notification.desc, type: notification.type });
+    setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  // 连接 SSE 实时通知（使用 fetch + ReadableStream，因为 EventSource 不支持自定义 Header）
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const controller = new AbortController();
+    let canceled = false;
+
+    fetch(`${API_BASE_URL}/sse/notifications`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.body) return;
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        const read = (): void => {
+          reader
+            .read()
+            .then(({ done, value }) => {
+              if (done || canceled) return;
+              buffer += decoder.decode(value, { stream: true });
+              // SSE 消息以空行分隔
+              const chunks = buffer.split('\n\n');
+              buffer = chunks.pop() || '';
+              for (const chunk of chunks) {
+                const dataLine = chunk
+                  .split('\n')
+                  .find((line) => line.startsWith('data: '));
+                if (dataLine) {
+                  const data = dataLine.slice(6);
+                  const notification = parseSSEMessage(data);
+                  if (notification) {
+                    setSseNotifications((prev) => [notification, ...prev].slice(0, 50));
+                    showNotification(notification);
+                  }
+                }
+              }
+              read();
+            })
+            .catch(() => {
+              // 读取异常时静默退出（如网络中断）
+            });
+        };
+        read();
+      })
+      .catch(() => {
+        // 连接失败时静默处理
+      });
+
+    return () => {
+      canceled = true;
+      controller.abort();
+    };
+  }, [showNotification]);
+
+  // 标记通知为已读
+  const markAsRead = (id: number) => {
+    setSseNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  };
 
   const handleSearch = () => {
     if (searchQuery.trim()) {
@@ -54,9 +192,9 @@ const Header: React.FC<{ title: string }> = ({ title }) => {
             className="relative p-2 text-slate-500 dark:text-slate-300 hover:text-slate-700 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
           >
             <Bell size={20} />
-            {notifications > 0 && (
+            {unreadCount > 0 && (
               <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                {notifications}
+                {unreadCount}
               </span>
             )}
           </button>
@@ -70,18 +208,25 @@ const Header: React.FC<{ title: string }> = ({ title }) => {
                 </button>
               </div>
               <div className="max-h-80 overflow-y-auto">
-                {notificationList.map((notif) => (
-                  <div
-                    key={notif.id}
-                    className={`p-4 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer ${
-                      notif.read ? 'opacity-60' : ''
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-                        notif.type === 'candidate' ? 'bg-blue-100 text-blue-600' :
-                        notif.type === 'interview' ? 'bg-amber-100 text-amber-600' : 'bg-green-100 text-green-600'
-                      }`}>
+                {sseNotifications.length === 0 ? (
+                  <div className="p-8 text-center text-sm text-slate-400">
+                    暂无实时通知
+                  </div>
+                ) : (
+                  sseNotifications.map((notif) => (
+                    <div
+                      key={notif.id}
+                      onClick={() => markAsRead(notif.id)}
+                      className={`p-4 border-b border-slate-50 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer ${
+                        notif.read ? 'opacity-60' : ''
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
+                          notif.type === 'candidate_added' || notif.type === 'candidate_status_changed' ? 'bg-blue-100 text-blue-600' :
+                          notif.type === 'interview_scheduled' || notif.type === 'interview_completed' ? 'bg-amber-100 text-amber-600' :
+                          notif.type === 'hiring_decision' ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-600'
+                        }`}>
                         <Bell size={14} />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -91,7 +236,8 @@ const Header: React.FC<{ title: string }> = ({ title }) => {
                       </div>
                     </div>
                   </div>
-                ))}
+                  ))
+                )}
               </div>
               <div className="p-4 border-t border-slate-100 dark:border-slate-700">
                 <button className="w-full text-sm text-blue-600 hover:text-blue-700 font-medium">
@@ -141,6 +287,31 @@ const Header: React.FC<{ title: string }> = ({ title }) => {
           )}
         </div>
       </div>
+
+      {/* SSE 实时通知 Toast */}
+      {toast && (
+        <div className="fixed top-20 right-8 z-[100] transition-all duration-300">
+          <div className="flex items-start gap-3 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 p-4 w-80">
+            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+              toast.type === 'candidate_added' || toast.type === 'candidate_status_changed' ? 'bg-blue-100 text-blue-600' :
+              toast.type === 'interview_scheduled' || toast.type === 'interview_completed' ? 'bg-amber-100 text-amber-600' :
+              toast.type === 'hiring_decision' ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-600'
+            }`}>
+              <Bell size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-slate-800 dark:text-slate-100 text-sm">{toast.title}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 break-words">{toast.desc}</p>
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 flex-shrink-0"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </header>
   );
 };

@@ -4,8 +4,24 @@ from typing import List
 from src.models.database import get_db, Evaluation
 from src.models.schemas import EvaluationCreate, EvaluationResponse
 from src.api.auth import get_current_user
+from src.evaluation import evaluation_tracker
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
+
+
+@router.get("/stats")
+def get_workflow_evaluation_stats(current_user=Depends(get_current_user)):
+    """获取 AI 工作流评估统计摘要（基于内存追踪器）"""
+    return evaluation_tracker.stats()
+
+
+@router.get("/stats/records")
+def get_workflow_evaluation_records(
+    limit: int = 20,
+    current_user=Depends(get_current_user)
+):
+    """获取最近的 AI 工作流评估记录"""
+    return evaluation_tracker.get_records(limit=limit)
 
 
 @router.get("/", response_model=List[EvaluationResponse])
@@ -16,12 +32,12 @@ def list_evaluations(
     current_user=Depends(get_current_user)
 ):
     query = db.query(Evaluation)
-    
+
     if candidate_id:
         query = query.filter(Evaluation.candidate_id == candidate_id)
     if dimension:
         query = query.filter(Evaluation.dimension == dimension)
-    
+
     return query.all()
 
 

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Search, Filter, MoreVertical, FileText, Eye, Trash2 } from 'lucide-react';
-import { getCandidates, createCandidate, deleteCandidate } from '../services/candidates';
+import { Plus, Search, Filter, MoreVertical, FileText, Eye, Trash2, UploadCloud, Loader2 } from 'lucide-react';
+import { getCandidates, createCandidate, deleteCandidate, uploadResume } from '../services/candidates';
 import type { Candidate } from '../types';
 
 const Candidates: React.FC = () => {
@@ -16,22 +16,25 @@ const Candidates: React.FC = () => {
     position: '',
     source: '',
   });
+  // 新增：上传简历相关状态
+  const [createdCandidateId, setCreatedCandidateId] = useState<number | null>(null);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [resumeDragOver, setResumeDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<any>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const mockData: Candidate[] = [
-      { id: 1, name: '张明', email: 'zhangming@example.com', phone: '13800138001', resume_file: 'resume1.pdf', status: 'pending', source: '拉勾网', position: '高级前端工程师', created_at: '2026-07-17T10:30:00', updated_at: '2026-07-17T10:30:00' },
-      { id: 2, name: '李华', email: 'lihua@example.com', phone: '13800138002', resume_file: 'resume2.pdf', status: 'interviewed', source: 'BOSS直聘', position: '产品经理', created_at: '2026-07-16T14:20:00', updated_at: '2026-07-16T14:20:00' },
-      { id: 3, name: '王芳', email: 'wangfang@example.com', phone: '13800138003', resume_file: 'resume3.pdf', status: 'hired', source: '内部推荐', position: 'UI设计师', created_at: '2026-07-15T09:15:00', updated_at: '2026-07-15T09:15:00' },
-      { id: 4, name: '刘伟', email: 'liuwei@example.com', phone: '13800138004', resume_file: 'resume4.pdf', status: 'pending', source: '智联招聘', position: '后端开发工程师', created_at: '2026-07-14T16:45:00', updated_at: '2026-07-14T16:45:00' },
-      { id: 5, name: '陈静', email: 'chenjing@example.com', phone: '13800138005', resume_file: 'resume5.pdf', status: 'interviewed', source: '猎头推荐', position: 'Java开发工程师', created_at: '2026-07-13T11:00:00', updated_at: '2026-07-13T11:00:00' },
-      { id: 6, name: '赵磊', email: 'zhaolei@example.com', phone: '13800138006', resume_file: 'resume6.pdf', status: 'pending', source: '拉勾网', position: '测试工程师', created_at: '2026-07-12T08:30:00', updated_at: '2026-07-12T08:30:00' },
-    ];
-    
     const fetchData = async () => {
+      setLoading(true);
       try {
-        const data = await getCandidates({ search }).catch(() => mockData);
+        const data = await getCandidates({ search });
         setCandidates(data);
+      } catch (err) {
+        console.error('加载候选人失败', err);
+        setCandidates([]);
       } finally {
         setLoading(false);
       }
@@ -39,36 +42,78 @@ const Candidates: React.FC = () => {
     fetchData();
   }, [search]);
 
+  const resetModal = () => {
+    setShowModal(false);
+    setNewCandidate({ name: '', email: '', phone: '', position: '', source: '' });
+    setCreatedCandidateId(null);
+    setResumeFile(null);
+    setUploadResult(null);
+    setUploadError(null);
+    setResumeDragOver(false);
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createCandidate(newCandidate).catch(() => {
-        const newId = Math.max(...candidates.map(c => c.id)) + 1;
-        const newItem: Candidate = {
-          id: newId,
-          ...newCandidate,
-          resume_file: null,
-          status: 'pending',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setCandidates([newItem, ...candidates]);
-        return newItem;
-      });
-      setShowModal(false);
-      setNewCandidate({ name: '', email: '', phone: '', position: '', source: '' });
+      const created = await createCandidate(newCandidate);
+      setCreatedCandidateId(created.id);
+      // 刷新列表
+      const data = await getCandidates({ search });
+      setCandidates(data);
     } catch (err) {
-      console.error(err);
+      console.error('创建候选人失败', err);
+      alert('创建候选人失败，请检查后端服务是否启动');
+    }
+  };
+
+  const handleFileSelect = (file: File) => {
+    const allowedExts = ['.txt', '.pdf', '.docx'];
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowedExts.includes(ext)) {
+      setUploadError('仅支持 .txt、.pdf、.docx 文件');
+      return;
+    }
+    setResumeFile(file);
+    setUploadError(null);
+  };
+
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setResumeDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) handleFileSelect(file);
+  };
+
+  const handleUploadResume = async () => {
+    if (!resumeFile || !createdCandidateId) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await uploadResume(createdCandidateId, resumeFile);
+      setUploadResult(result);
+      // 刷新列表
+      const data = await getCandidates({ search });
+      setCandidates(data);
+    } catch (err: any) {
+      setUploadError(err.message || '简历上传失败');
+    } finally {
+      setUploading(false);
     }
   };
 
   const handleDelete = async (id: number) => {
     if (confirm('确定要删除该候选人吗？')) {
       try {
-        await deleteCandidate(id).catch(() => {});
+        await deleteCandidate(id);
         setCandidates(candidates.filter(c => c.id !== id));
       } catch (err) {
         console.error(err);
+        alert('删除失败');
       }
     }
   };
@@ -77,6 +122,7 @@ const Candidates: React.FC = () => {
     const map: Record<string, string> = {
       pending: '待处理',
       interviewed: '面试中',
+      interviewing: '面试中',
       hired: '已录用',
       rejected: '已拒绝',
     };
@@ -88,6 +134,7 @@ const Candidates: React.FC = () => {
       case 'hired':
         return 'bg-green-100 text-green-700';
       case 'interviewed':
+      case 'interviewing':
         return 'bg-blue-100 text-blue-700';
       case 'pending':
         return 'bg-amber-100 text-amber-700';
@@ -180,6 +227,7 @@ const Candidates: React.FC = () => {
                           <Eye size={16} />
                         </button>
                         <button
+                          onClick={() => navigate(`/candidates/${candidate.id}`)}
                           className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
                           title="简历"
                         >
@@ -204,7 +252,7 @@ const Candidates: React.FC = () => {
 
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
+          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-slate-800 mb-4">新增候选人</h3>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
@@ -253,20 +301,89 @@ const Candidates: React.FC = () => {
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
+              {/* 简历上传区域：仅在候选人创建成功后显示 */}
+              {createdCandidateId && (
+                <div className="space-y-3 p-4 bg-blue-50/50 border border-blue-100 rounded-lg">
+                  <p className="text-sm font-medium text-slate-700">
+                    候选人已创建（ID: {createdCandidateId}），可上传简历
+                  </p>
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setResumeDragOver(true); }}
+                    onDragLeave={() => setResumeDragOver(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                      resumeDragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-300 hover:border-blue-400'
+                    }`}
+                  >
+                    <UploadCloud className="mx-auto text-slate-400 mb-2" size={28} />
+                    {resumeFile ? (
+                      <p className="text-sm text-slate-700 font-medium">{resumeFile.name}</p>
+                    ) : (
+                      <>
+                        <p className="text-sm text-slate-600">点击或拖拽简历文件到此处</p>
+                        <p className="text-xs text-slate-400 mt-1">支持 .txt / .pdf / .docx</p>
+                      </>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".txt,.pdf,.docx"
+                      onChange={handleFileInput}
+                      className="hidden"
+                    />
+                  </div>
+
+                  {uploadError && (
+                    <p className="text-xs text-red-600">{uploadError}</p>
+                  )}
+
+                  {resumeFile && !uploadResult && (
+                    <button
+                      type="button"
+                      onClick={handleUploadResume}
+                      disabled={uploading}
+                      className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm disabled:opacity-50"
+                    >
+                      {uploading ? <Loader2 className="animate-spin" size={16} /> : <UploadCloud size={16} />}
+                      {uploading ? '上传解析中...' : '上传并解析简历'}
+                    </button>
+                  )}
+
+                  {uploadResult && (
+                    <div className="bg-white border border-green-200 rounded-lg p-3 text-xs space-y-1">
+                      <p className="text-green-700 font-medium">✓ 简历上传解析成功</p>
+                      {uploadResult.skills && uploadResult.skills.length > 0 && (
+                        <p className="text-slate-600">技能: {Array.isArray(uploadResult.skills) ? uploadResult.skills.join('、') : String(uploadResult.skills)}</p>
+                      )}
+                      {uploadResult.experience && (
+                        <p className="text-slate-600">经验: {uploadResult.experience}</p>
+                      )}
+                      {uploadResult.education && (
+                        <p className="text-slate-600">教育: {uploadResult.education}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={resetModal}
                   className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors"
                 >
-                  取消
+                  {createdCandidateId ? '完成' : '取消'}
                 </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                >
-                  创建
-                </button>
+                {!createdCandidateId && (
+                  <button
+                    type="submit"
+                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    创建
+                  </button>
+                )}
               </div>
             </form>
           </div>

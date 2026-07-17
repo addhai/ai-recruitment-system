@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api import auth, candidates, interviews, questionnaires, evaluations, talent_pool, dashboard
+from src.api import auth, candidates, interviews, questionnaires, evaluations, talent_pool, dashboard, sse, knowledge_base
 from src.models.database import init_db
 
 app = FastAPI(title="AI招聘系统", version="1.0.0", description="基于AI的智能招聘管理系统")
@@ -20,6 +20,8 @@ app.include_router(questionnaires.router)
 app.include_router(evaluations.router)
 app.include_router(talent_pool.router)
 app.include_router(dashboard.router)
+app.include_router(sse.router)
+app.include_router(knowledge_base.router)
 
 
 @app.on_event("startup")
