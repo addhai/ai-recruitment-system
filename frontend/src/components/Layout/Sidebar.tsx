@@ -37,15 +37,15 @@ const Sidebar: React.FC = () => {
   const userRole = user?.role || 'viewer';
 
   return (
-    <div className="h-screen w-64 bg-slate-900 text-white flex flex-col">
-      <div className="p-6 border-b border-slate-700">
+    <div className="h-screen w-64 skin-sidebar text-white flex flex-col">
+      <div className="p-6 border-b skin-sidebar-border">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
             <Briefcase size={20} />
           </div>
           <div>
             <h1 className="font-bold text-lg">AI招聘系统</h1>
-            <p className="text-xs text-slate-400">智能招聘管理平台</p>
+            <p className="text-xs skin-sidebar-text">智能招聘管理平台</p>
           </div>
         </div>
       </div>
@@ -62,8 +62,8 @@ const Sidebar: React.FC = () => {
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 ${
                       isActive
-                        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-                        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        ? 'skin-sidebar-active text-white shadow-lg'
+                        : 'skin-sidebar-text skin-sidebar-hover hover:text-white'
                     }`
                   }
                 >
@@ -76,21 +76,21 @@ const Sidebar: React.FC = () => {
         </ul>
       </nav>
 
-      <div className="p-4 border-t border-slate-700">
+      <div className="p-4 border-t skin-sidebar-border">
         <div className="flex items-center gap-3 mb-3 px-2">
           <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-sm font-semibold">
             {user?.full_name?.charAt(0) || user?.username?.charAt(0) || 'U'}
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{user?.full_name || user?.username}</p>
-            <p className="text-xs text-slate-400 truncate">
+            <p className="text-xs skin-sidebar-text truncate">
               {user?.role === 'admin' ? '管理员' : user?.role === 'hr' ? 'HR人员' : user?.role === 'interviewer' ? '面试官' : '查看者'}
             </p>
           </div>
         </div>
         <button
           onClick={handleLogout}
-          className="w-full flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white rounded-lg transition-colors"
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm skin-sidebar-text skin-sidebar-hover hover:text-white rounded-lg transition-colors"
         >
           <LogOut size={16} />
           <span>退出登录</span>

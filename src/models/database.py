@@ -172,15 +172,17 @@ def get_db():
 
 def init_db():
     Base.metadata.create_all(bind=engine)
-    
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    
+
+    import bcrypt
+
+    def _hash(password):
+        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
     db = SessionLocal()
     try:
         existing_admin = db.query(User).filter(User.username == "admin").first()
         if not existing_admin:
-            hashed_password = pwd_context.hash("admin123")
+            hashed_password = _hash("admin123")
             admin = User(
                 username="admin",
                 email="admin@example.com",
@@ -192,24 +194,34 @@ def init_db():
             db.add(admin)
             
             hr_user = User(
-                username="hr",
-                email="hr@example.com",
-                password_hash=pwd_context.hash("hr123"),
+                username="hr001",
+                email="lihong@example.com",
+                password_hash=_hash("hr123456"),
                 role="hr",
-                full_name="李经理",
-                department="人力资源部"
+                full_name="李红",
+                department="人事部"
             )
             db.add(hr_user)
-            
+
             interviewer = User(
-                username="interviewer",
-                email="interviewer@example.com",
-                password_hash=pwd_context.hash("int123"),
+                username="tech001",
+                email="wanggong@example.com",
+                password_hash=_hash("tech123456"),
                 role="interviewer",
-                full_name="王面试官",
+                full_name="王工",
                 department="技术部"
             )
             db.add(interviewer)
+
+            viewer = User(
+                username="view001",
+                email="zhang@example.com",
+                password_hash=_hash("view123456"),
+                role="viewer",
+                full_name="张经理",
+                department="市场部"
+            )
+            db.add(viewer)
             
             from datetime import datetime, timedelta
             import random

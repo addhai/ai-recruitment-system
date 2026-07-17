@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Settings as SettingsIcon, Users, Shield, Bell, Palette, Plus, MoreVertical, X, Check, Edit2, Trash2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import type { SkinPreset } from '../context/ThemeContext';
 
 interface User {
   id: number;
@@ -20,7 +21,7 @@ interface NotificationSetting {
 }
 
 const Settings: React.FC = () => {
-  const { themeColor, mode, setThemeColor, setMode } = useTheme();
+  const { skinId, skin, skins, mode, setSkinId, setMode } = useTheme();
   const [activeTab, setActiveTab] = useState('users');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -139,7 +140,7 @@ const Settings: React.FC = () => {
     ));
   };
 
-  const themeColors = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4'];
+  // 删除已弃用的 themeColors
 
   return (
     <div className="space-y-6">
@@ -291,54 +292,72 @@ const Settings: React.FC = () => {
             {activeTab === 'appearance' && (
               <div>
                 <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-6">外观设置</h3>
-                <div className="space-y-6">
+                <div className="space-y-8">
+                  {/* 皮肤选择 */}
                   <div>
-                    <h4 className="font-medium text-slate-700 dark:text-slate-200 mb-3">主题色</h4>
-                    <div className="flex gap-3">
-                      {themeColors.map((color) => (
+                    <h4 className="font-medium text-slate-700 dark:text-slate-200 mb-1">皮肤主题</h4>
+                    <p className="text-sm text-slate-400 mb-4">选择一套皮肤，侧边栏、按钮、渐变色都会同步变化</p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                      {skins.map((s: SkinPreset) => (
                         <button
-                          key={color}
-                          onClick={() => setThemeColor(color)}
-                          className={`w-10 h-10 rounded-full border-2 transition-colors ${
-                            themeColor === color ? 'border-slate-400 dark:border-slate-500 ring-2 ring-slate-200 dark:ring-slate-600' : 'border-transparent hover:border-slate-300'
+                          key={s.id}
+                          onClick={() => setSkinId(s.id)}
+                          className={`relative p-4 rounded-xl border-2 transition-all text-left ${
+                            skinId === s.id
+                              ? 'border-slate-400 dark:border-slate-500 ring-2 ring-slate-200 dark:ring-slate-600'
+                              : 'border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
                           }`}
-                          style={{ backgroundColor: color }}
                         >
-                          {themeColor === color && (
-                            <Check size={16} className="text-white mx-auto mt-2" />
-                          )}
+                          {/* 预览条 */}
+                          <div className="flex rounded-lg overflow-hidden mb-3 h-16">
+                            <div className="flex-1 flex items-center justify-center" style={{ backgroundColor: s.sidebarBg }}>
+                              <div className="w-6 h-6 rounded" style={{ backgroundColor: s.sidebarActiveBg }}></div>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center justify-center gap-1 bg-white dark:bg-slate-800">
+                              <div className="w-10 h-2.5 rounded-full" style={{ backgroundColor: s.primary }}></div>
+                              <div className="w-8 h-2.5 rounded-full" style={{ backgroundColor: s.primaryLight }}></div>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-sm text-slate-700 dark:text-slate-200">{s.name}</span>
+                            {skinId === s.id && (
+                              <Check size={16} style={{ color: s.primary }} />
+                            )}
+                          </div>
                         </button>
                       ))}
                     </div>
                   </div>
+
+                  {/* 深色/浅色模式 */}
                   <div>
-                    <h4 className="font-medium text-slate-700 dark:text-slate-200 mb-3">模式</h4>
+                    <h4 className="font-medium text-slate-700 dark:text-slate-200 mb-3">显示模式</h4>
                     <div className="flex gap-3">
-                      <button 
+                      <button
                         onClick={() => setMode('light')}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          mode === 'light' 
-                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200' 
+                          mode === 'light'
+                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200'
                             : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
                         }`}
                       >
                         浅色模式
                       </button>
-                      <button 
+                      <button
                         onClick={() => setMode('dark')}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          mode === 'dark' 
-                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200' 
+                          mode === 'dark'
+                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200'
                             : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
                         }`}
                       >
                         深色模式
                       </button>
-                      <button 
+                      <button
                         onClick={() => setMode('system')}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          mode === 'system' 
-                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200' 
+                          mode === 'system'
+                            ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200'
                             : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
                         }`}
                       >

@@ -55,3 +55,76 @@ body {
 .dark ::-webkit-scrollbar-thumb:hover {
   background: #64748b;
 }
+
+/* ========== 皮肤系统 CSS 变量覆盖 ========== */
+
+/* 覆盖 Tailwind 的 bg-blue-600 系列，让主题色全局生效 */
+.bg-blue-600 {
+  background-color: var(--color-primary) !important;
+}
+.hover\:bg-blue-700:hover {
+  background-color: var(--color-primary-hover) !important;
+}
+.bg-blue-50 {
+  background-color: var(--color-primary-lighter) !important;
+}
+.dark .dark\:bg-blue-900\/30 {
+  background-color: rgba(var(--color-shadow-rgb), 0.3) !important;
+}
+.text-blue-600 {
+  color: var(--color-primary) !important;
+}
+.hover\:text-blue-700:hover {
+  color: var(--color-primary-hover) !important;
+}
+.dark .dark\:text-blue-400 {
+  color: var(--color-primary) !important;
+}
+.text-blue-700 {
+  color: var(--color-primary-hover) !important;
+}
+.border-blue-200 {
+  border-color: var(--color-primary-light) !important;
+}
+.focus\:ring-blue-500:focus {
+  --tw-ring-color: var(--color-primary) !important;
+}
+
+/* 渐变色覆盖 */
+.from-blue-500 {
+  --tw-gradient-from: var(--color-gradient-from) !important;
+}
+.from-blue-600 {
+  --tw-gradient-from: var(--color-gradient-from) !important;
+}
+.to-indigo-600 {
+  --tw-gradient-to: var(--color-gradient-to) !important;
+}
+.to-purple-600 {
+  --tw-gradient-to: var(--color-gradient-to) !important;
+}
+
+/* 阴影覆盖 */
+.shadow-blue-500\/30 {
+  box-shadow: 0 10px 15px -3px rgba(var(--color-shadow-rgb), 0.3), 0 4px 6px -4px rgba(var(--color-shadow-rgb), 0.3) !important;
+}
+.shadow-blue-600\/30 {
+  box-shadow: 0 10px 15px -3px rgba(var(--color-shadow-rgb), 0.3), 0 4px 6px -4px rgba(var(--color-shadow-rgb), 0.3) !important;
+}
+
+/* 侧边栏皮肤 */
+.skin-sidebar {
+  background-color: var(--color-sidebar-bg) !important;
+}
+.skin-sidebar-text {
+  color: var(--color-sidebar-text) !important;
+}
+.skin-sidebar-active {
+  background-color: var(--color-sidebar-active) !important;
+}
+.skin-sidebar-hover:hover {
+  background-color: var(--color-sidebar-hover) !important;
+}
+.skin-sidebar-border {
+  border-color: var(--color-sidebar-border) !important;
+}

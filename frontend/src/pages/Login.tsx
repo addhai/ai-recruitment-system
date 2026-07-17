@@ -4,8 +4,8 @@ import { Briefcase, Lock, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const Login: React.FC = () => {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { login, token } = useAuth();
@@ -19,14 +19,15 @@ const Login: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!username || !password) {
+      setError('请输入用户名和密码');
+      return;
+    }
     setLoading(true);
     setError('');
-    
+
     try {
-      await login({ username, password }).catch(() => {
-        localStorage.setItem('token', 'mock-token');
-        window.location.href = '/';
-      });
+      await login({ username, password });
       navigate('/');
     } catch (err) {
       setError('登录失败，请检查用户名和密码');
@@ -102,7 +103,7 @@ const Login: React.FC = () => {
           </form>
 
           <div className="mt-6 pt-6 border-t border-slate-100 text-center text-sm text-slate-500">
-            <p>演示账号: admin / admin123</p>
+            <p>演示账号：admin / admin123 | hr001 / hr123456</p>
           </div>
         </div>
       </div>
