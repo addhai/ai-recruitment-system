@@ -1,0 +1,110 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from typing import List
+from src.models.database import get_db, Questionnaire, QuestionnaireResponse
+from src.models.schemas import QuestionnaireCreate, QuestionnaireResponseCreate, QuestionnaireResponseResponse
+from src.api.auth import get_current_user
+
+router = APIRouter(prefix="/questionnaires", tags=["questionnaires"])
+
+
+@router.get("/", response_model=List[dict])
+def list_questionnaires(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    questionnaires = db.query(Questionnaire).all()
+    return [
+        {
+            "id": q.id,
+            "name": q.name,
+            "type": q.type,
+            "question_count": len(q.questions) if isinstance(q.questions, list) else len(q.questions.get("questions", [])),
+            "created_at": q.created_at
+        }
+        for q in questionnaires
+    ]
+
+
+@router.get("/{questionnaire_id}")
+def get_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    questionnaire = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
+    if not questionnaire:
+        raise HTTPException(status_code=404, detail="Questionnaire not found")
+    return {
+        "id": questionnaire.id,
+        "name": questionnaire.name,
+        "type": questionnaire.type,
+        "questions": questionnaire.questions,
+        "created_at": questionnaire.created_at
+    }
+
+
+@router.post("/")
+def create_questionnaire(questionnaire: QuestionnaireCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    new_questionnaire = Questionnaire(
+        name=questionnaire.name,
+        type=questionnaire.type,
+        questions=questionnaire.questions,
+        created_by=current_user.id
+    )
+    db.add(new_questionnaire)
+    db.commit()
+    db.refresh(new_questionnaire)
+    return {
+        "id": new_questionnaire.id,
+        "name": new_questionnaire.name,
+        "type": new_questionnaire.type,
+        "questions": new_questionnaire.questions
+    }
+
+
+@router.put("/{questionnaire_id}")
+def update_questionnaire(questionnaire_id: int, name: str = None, questions: List[dict] = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    q = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Questionnaire not found")
+    
+    if name:
+        q.name = name
+    if questions:
+        q.questions = questions
+    
+    db.commit()
+    db.refresh(q)
+    return {
+        "id": q.id,
+        "name": q.name,
+        "type": q.type,
+        "questions": q.questions
+    }
+
+
+@router.delete("/{questionnaire_id}")
+def delete_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    q = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Questionnaire not found")
+    db.delete(q)
+    db.commit()
+    return {"message": "Questionnaire deleted"}
+
+
+@router.post("/{questionnaire_id}/responses", response_model=QuestionnaireResponseResponse)
+def submit_response(questionnaire_id: int, response: QuestionnaireResponseCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    q = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Questionnaire not found")
+    
+    new_response = QuestionnaireResponse(
+        candidate_id=response.candidate_id,
+        questionnaire_id=questionnaire_id,
+        responses=response.responses
+    )
+    db.add(new_response)
+    db.commit()
+    db.refresh(new_response)
+    return new_response
+
+
+@router.get("/{questionnaire_id}/responses", response_model=List[QuestionnaireResponseResponse])
+def get_responses(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    responses = db.query(QuestionnaireResponse).filter(QuestionnaireResponse.questionnaire_id == questionnaire_id).all()
+    return responses

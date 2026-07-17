@@ -1,0 +1,76 @@
+version: '3.8'
+
+services:
+  api-service:
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/recruitment
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+      - DEBUG=true
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - recruitment-net
+    volumes:
+      - ./src:/app/src
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: recruitment
+    networks:
+      - recruitment-net
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - recruitment-net
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:4.0-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - recruitment-net
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  frontend:
+    image: nginx:1.27-alpine
+    ports:
+      - "3000:80"
+    volumes:
+      - ./frontend/build:/usr/share/nginx/html
+    networks:
+      - recruitment-net
+    depends_on:
+      - api-service
+
+networks:
+  recruitment-net:
+    driver: bridge
+
+volumes:
+  pg_data:
+  redis_data:
+  rabbitmq_data:

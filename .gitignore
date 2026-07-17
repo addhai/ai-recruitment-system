@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.log
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.env.*
+docker-compose.override.yml
