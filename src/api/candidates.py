@@ -16,6 +16,13 @@ from src.sse.notification import (
     notify_hiring_decision,
 )
 from src.services.feishu_notify import notify_workflow_completed_async
+from src.services.resume_cleaner import (
+    validate_resume_file,
+    parse_resume_with_fallback,
+    clean_resume_text,
+    segment_text,
+    MAX_FILE_SIZE,
+)
 
 
 def _sanitize_output(obj):
@@ -154,48 +161,6 @@ def get_resume(candidate_id: int, db: Session = Depends(get_db), current_user=De
     return resume
 
 
-def _extract_text_from_file(file_path: str, filename: str) -> str:
-    """根据文件类型提取文本内容，支持 .txt/.pdf/.docx"""
-    ext = os.path.splitext(filename)[1].lower()
-
-    if ext == ".txt":
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-
-    if ext == ".pdf":
-        try:
-            from PyPDF2 import PdfReader
-            reader = PdfReader(file_path)
-            texts = []
-            for page in reader.pages:
-                text = page.extract_text() or ""
-                texts.append(text)
-            return "\n".join(texts).strip()
-        except ImportError:
-            # 没有安装 PyPDF2 时，回退使用文件名
-            return f"[PyPDF2 未安装，无法解析 PDF：{filename}]"
-        except Exception as e:
-            return f"[PDF 解析失败：{e}]"
-
-    if ext == ".docx":
-        try:
-            from docx import Document
-            doc = Document(file_path)
-            return "\n".join(p.text for p in doc.paragraphs if p.text).strip()
-        except ImportError:
-            # 没有安装 python-docx 时，回退使用文件名
-            return f"[python-docx 未安装，无法解析 DOCX：{filename}]"
-        except Exception as e:
-            return f"[DOCX 解析失败：{e}]"
-
-    # 其他类型直接尝试读取
-    try:
-        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-            return f.read()
-    except Exception:
-        return filename
-
-
 @router.post("/{candidate_id}/upload-resume")
 async def upload_resume_file(
     candidate_id: int,
@@ -203,33 +168,59 @@ async def upload_resume_file(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    """上传简历文件，提取文本并存入 Resume 表"""
+    """上传简历文件，提取文本并存入 Resume 表
+
+    支持格式: .txt .pdf .docx .doc .html .htm
+    数据清洗流程: 格式校验 → 编码统一 → 文本提取 → 空白清理 → 特殊字符过滤 → 安全检查 → LLM解析
+    扫描件PDF支持OCR兜底（需安装 pdf2image + pytesseract）
+    """
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
 
-    # 保存上传文件到临时文件
-    suffix = os.path.splitext(file.filename or "")[1]
+    # 1. 读取文件内容
+    raw_bytes = await file.read()
+    file_size = len(raw_bytes)
+    filename = file.filename or "resume.txt"
+
+    # 2. 格式校验（文件类型 + 大小）
+    is_valid, reason, ext = validate_resume_file(filename, file_size)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=reason)
+
+    # 3. 保存到临时文件（PDF/DOCX需要文件路径）
+    suffix = ext or os.path.splitext(filename)[1]
     tmp_fd, tmp_path = tempfile.mkstemp(suffix=suffix)
     try:
         with os.fdopen(tmp_fd, "wb") as tmp:
-            content = await file.read()
-            tmp.write(content)
+            tmp.write(raw_bytes)
 
-        # 提取文本
-        parsed_text = _extract_text_from_file(tmp_path, file.filename or "resume.txt")
+        # 4. 文本提取 + 数据清洗（编码统一、空白清理、特殊字符过滤、OCR兜底）
+        parsed_text, source_type, used_ocr = parse_resume_with_fallback(
+            tmp_path, filename, raw_bytes
+        )
     finally:
         try:
             os.remove(tmp_path)
         except OSError:
             pass
 
-    # 安全检查：在送入 LLM 解析前对简历原文做输入防护
+    if not parsed_text or len(parsed_text) < 10:
+        raise HTTPException(
+            status_code=400,
+            detail=f"简历内容提取失败或内容过少(来源:{source_type})，请确认文件内容或使用其他格式"
+        )
+
+    # 5. 安全检查：在送入 LLM 解析前对简历原文做输入防护
     is_safe, reason = InputGuard.check(parsed_text)
     if not is_safe:
         raise HTTPException(status_code=400, detail=f"简历内容未通过安全检查：{reason}")
 
-    # 同时尝试调用 workflow 的 parse_resume 做结构化解析
+    # 6. 长文本分段（超过3000字符按段落分割，取首段做结构化解析）
+    chunks = segment_text(parsed_text, max_chunk_size=3000)
+    primary_chunk = chunks[0] if chunks else parsed_text
+
+    # 7. 调用 workflow 的 parse_resume 做结构化解析
     parsed_data = None
     skills = None
     experience = None
@@ -239,7 +230,7 @@ async def upload_resume_file(
         state = parse_resume({
             "candidate_id": candidate_id,
             "candidate_name": candidate.name,
-            "resume_text": parsed_text,
+            "resume_text": primary_chunk,
             "position_requirements": "",
         })
         parsed_data = state.get("parsed_resume")
@@ -270,9 +261,9 @@ async def upload_resume_file(
     except Exception as e:
         # LLM 未配置或其他异常时退化为只保存原文
         print(f"[upload_resume] 调用 parse_resume 失败，仅保存原文: {e}")
-        parsed_data = {"raw_text": parsed_text[:2000]}
+        parsed_data = {"raw_text": parsed_text[:2000], "parse_error": str(e)}
 
-    # 更新或创建 Resume 记录
+    # 8. 更新或创建 Resume 记录
     resume = db.query(Resume).filter(Resume.candidate_id == candidate_id).first()
     if resume:
         resume.file_name = file.filename
@@ -293,17 +284,20 @@ async def upload_resume_file(
         )
         db.add(resume)
 
-    # 同步更新 Candidate.resume_text
+    # 9. 同步更新 Candidate.resume_text
     candidate.resume_text = parsed_text
     db.commit()
     db.refresh(resume)
     db.refresh(candidate)
 
-    # 输出安全防护：过滤返回结果中的 PII 信息
+    # 10. 输出安全防护：过滤返回结果中的 PII 信息
     return _sanitize_output({
         "message": "简历上传成功",
         "candidate_id": candidate_id,
         "file_name": file.filename,
+        "source_type": source_type,
+        "used_ocr": used_ocr,
+        "text_length": len(parsed_text),
         "parsed_text": parsed_text,
         "parsed_data": parsed_data,
         "skills": skills,
