@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Filter, MoreVertical, FileText, Eye, Trash2, UploadCloud, Loader2 } from 'lucide-react';
 import { getCandidates, createCandidate, deleteCandidate, uploadResume } from '../services/candidates';
 import type { Candidate } from '../types';
@@ -8,6 +8,7 @@ const Candidates: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [newCandidate, setNewCandidate] = useState({
     name: '',
@@ -25,12 +26,29 @@ const Candidates: React.FC = () => {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // 从 URL 参数初始化搜索词（支持 Header 全局搜索跳转）
+  useEffect(() => {
+    const urlSearch = searchParams.get('search');
+    if (urlSearch) {
+      setSearch(urlSearch);
+    }
+  }, [searchParams]);
+
+  // 搜索防抖：输入停止 300ms 后才真正触发请求
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const data = await getCandidates({ search });
+        const data = await getCandidates({ search: debouncedSearch });
         setCandidates(data);
       } catch (err) {
         console.error('加载候选人失败', err);
@@ -40,7 +58,7 @@ const Candidates: React.FC = () => {
       }
     };
     fetchData();
-  }, [search]);
+  }, [debouncedSearch]);
 
   const resetModal = () => {
     setShowModal(false);
@@ -58,7 +76,7 @@ const Candidates: React.FC = () => {
       const created = await createCandidate(newCandidate);
       setCreatedCandidateId(created.id);
       // 刷新列表
-      const data = await getCandidates({ search });
+      const data = await getCandidates({ search: debouncedSearch });
       setCandidates(data);
     } catch (err) {
       console.error('创建候选人失败', err);
@@ -97,7 +115,7 @@ const Candidates: React.FC = () => {
       const result = await uploadResume(createdCandidateId, resumeFile);
       setUploadResult(result);
       // 刷新列表
-      const data = await getCandidates({ search });
+      const data = await getCandidates({ search: debouncedSearch });
       setCandidates(data);
     } catch (err: any) {
       setUploadError(err.message || '简历上传失败');

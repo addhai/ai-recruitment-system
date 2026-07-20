@@ -5,12 +5,22 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from src.config import settings
 
-llm = ChatOpenAI(
-    model=settings.LLM_MODEL,
-    temperature=0.3,
-    api_key=settings.LLM_API_KEY,
-    base_url=settings.LLM_BASE_URL
-)
+_llm_instance: Optional[ChatOpenAI] = None
+
+
+def _get_llm() -> ChatOpenAI:
+    """延迟初始化 LLM，避免启动时无 API Key 报错"""
+    global _llm_instance
+    if _llm_instance is None:
+        if not settings.LLM_API_KEY:
+            raise RuntimeError("LLM API Key 未配置，请在 .env 中设置 LLM_API_KEY")
+        _llm_instance = ChatOpenAI(
+            model=settings.LLM_MODEL,
+            temperature=0.3,
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_API_BASE
+        )
+    return _llm_instance
 
 
 class RecruitmentState(TypedDict):
@@ -55,7 +65,7 @@ def parse_resume(state: RecruitmentState) -> RecruitmentState:
         input_variables=["resume_text"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     parsed_data = chain.invoke({"resume_text": state["resume_text"]})
     
     return {
@@ -82,7 +92,7 @@ def extract_skills(state: RecruitmentState) -> RecruitmentState:
         input_variables=["parsed_resume"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     skills_data = chain.invoke({"parsed_resume": state["parsed_resume"]})
     
     return {
@@ -113,7 +123,7 @@ def evaluate_skill_match(state: RecruitmentState) -> RecruitmentState:
     )
     
     skills_str = str(state["parsed_resume"].get("skills", {}) or state["parsed_resume"].get("skills_technical", []))
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     match_result = chain.invoke({
         "skills": skills_str,
         "position_requirements": state["position_requirements"]
@@ -148,7 +158,7 @@ def evaluate_experience(state: RecruitmentState) -> RecruitmentState:
     )
     
     experience_str = str(state["parsed_resume"].get("experience", []))
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     exp_result = chain.invoke({
         "experience": experience_str,
         "position_requirements": state["position_requirements"]
@@ -186,7 +196,7 @@ def evaluate_education(state: RecruitmentState) -> RecruitmentState:
     )
     
     education_str = str(state["parsed_resume"].get("education", []))
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     edu_result = chain.invoke({
         "education": education_str,
         "position_requirements": state["position_requirements"]
@@ -227,7 +237,7 @@ def assess_cultural_fit(state: RecruitmentState) -> RecruitmentState:
         input_variables=["parsed_resume"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     culture_result = chain.invoke({"parsed_resume": state["parsed_resume"]})
     
     return {
@@ -269,7 +279,7 @@ def generate_technical_questionnaire(state: RecruitmentState) -> RecruitmentStat
         "experience": state["parsed_resume"].get("experience", [])[:2]
     })
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     questions = chain.invoke({
         "position_requirements": state["position_requirements"],
         "resume_summary": resume_summary
@@ -302,7 +312,7 @@ def generate_behavioral_questionnaire(state: RecruitmentState) -> RecruitmentSta
         input_variables=["position_requirements"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     questions = chain.invoke({"position_requirements": state["position_requirements"]})
     
     return {
@@ -358,7 +368,7 @@ def conduct_first_interview(state: RecruitmentState) -> RecruitmentState:
         input_variables=["parsed_resume", "position_requirements"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     result = chain.invoke({
         "parsed_resume": state["parsed_resume"],
         "position_requirements": state["position_requirements"]
@@ -411,7 +421,7 @@ def conduct_second_interview(state: RecruitmentState) -> RecruitmentState:
         input_variables=["parsed_resume", "position_requirements"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     result = chain.invoke({
         "parsed_resume": state["parsed_resume"],
         "position_requirements": state["position_requirements"]
@@ -468,7 +478,7 @@ def conduct_third_interview(state: RecruitmentState) -> RecruitmentState:
         input_variables=["parsed_resume", "position_requirements"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     result = chain.invoke({
         "parsed_resume": state["parsed_resume"],
         "position_requirements": state["position_requirements"]
@@ -518,7 +528,7 @@ def generate_hiring_decision(state: RecruitmentState) -> RecruitmentState:
         input_variables=["candidate_name", "skill_match_score", "culture_match_score", "communication_score", "questionnaire_score", "interview_scores"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     decision = chain.invoke({
         "candidate_name": state["candidate_name"],
         "skill_match_score": state.get("skill_match_score", 0),

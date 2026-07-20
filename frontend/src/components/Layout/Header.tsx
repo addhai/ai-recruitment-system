@@ -155,6 +155,18 @@ const Header: React.FC<{ title: string }> = ({ title }) => {
     setSseNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
   };
 
+  // 标记全部已读
+  const markAllAsRead = () => {
+    setSseNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  };
+
+  // 查看全部通知：标记已读并跳转到仪表盘
+  const viewAllNotifications = () => {
+    markAllAsRead();
+    setShowNotificationPanel(false);
+    navigate('/');
+  };
+
   const handleSearch = () => {
     if (searchQuery.trim()) {
       navigate(`/candidates?search=${encodeURIComponent(searchQuery)}`);
@@ -240,7 +252,18 @@ const Header: React.FC<{ title: string }> = ({ title }) => {
                 )}
               </div>
               <div className="p-4 border-t border-slate-100 dark:border-slate-700">
-                <button className="w-full text-sm text-blue-600 hover:text-blue-700 font-medium">
+                {sseNotifications.length > 0 && (
+                  <button
+                    onClick={markAllAsRead}
+                    className="w-full text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-medium mb-2"
+                  >
+                    标记全部已读
+                  </button>
+                )}
+                <button
+                  onClick={viewAllNotifications}
+                  className="w-full text-sm text-blue-600 hover:text-blue-700 font-medium"
+                >
                   查看全部通知
                 </button>
               </div>

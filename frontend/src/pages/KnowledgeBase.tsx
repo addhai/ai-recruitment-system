@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, BookOpen, FileText, Send, Bot, User } from 'lucide-react';
+import { queryKnowledgeBase, getDocuments } from '../services/knowledgeBase';
+import type { KnowledgeBaseDocument } from '../services/knowledgeBase';
 
 const KnowledgeBase: React.FC = () => {
   const [query, setQuery] = useState('');
@@ -7,15 +9,19 @@ const KnowledgeBase: React.FC = () => {
     { role: 'assistant', content: '您好！我是企业人事制度知识库助手，有什么可以帮助您的吗？您可以询问关于入职流程、福利制度、绩效考核、培训等方面的问题。' }
   ]);
   const [loading, setLoading] = useState(false);
+  const [documents, setDocuments] = useState<KnowledgeBaseDocument[]>([]);
 
-  const documents = [
-    { title: '员工入职流程', category: '入职管理' },
-    { title: '员工福利制度', category: '薪酬福利' },
-    { title: '绩效考核制度', category: '绩效管理' },
-    { title: '员工培训制度', category: '培训发展' },
-    { title: '招聘流程规范', category: '招聘管理' },
-    { title: '薪酬管理制度', category: '薪酬福利' },
-  ];
+  useEffect(() => {
+    const loadDocs = async () => {
+      try {
+        const docs = await getDocuments();
+        setDocuments(docs);
+      } catch (e) {
+        console.error('加载知识库文档失败:', e);
+      }
+    };
+    loadDocs();
+  }, []);
 
   const quickQuestions = [
     '员工入职流程是怎样的？',
@@ -24,7 +30,7 @@ const KnowledgeBase: React.FC = () => {
     '试用期多久？',
   ];
 
-  const handleSend = (q?: string) => {
+  const handleSend = async (q?: string) => {
     const question = q || query;
     if (!question.trim()) return;
 
@@ -32,46 +38,22 @@ const KnowledgeBase: React.FC = () => {
     setQuery('');
     setLoading(true);
 
-    setTimeout(() => {
-      const answer = getAnswer(question);
+    try {
+      const result = await queryKnowledgeBase(question);
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: answer.content,
-        sources: answer.sources
+        content: result.answer,
+        sources: result.sources
       }]);
+    } catch (e: any) {
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `抱歉，查询失败：${e.message || '未知错误'}`,
+        sources: []
+      }]);
+    } finally {
       setLoading(false);
-    }, 1000);
-  };
-
-  const getAnswer = (question: string) => {
-    if (question.includes('入职')) {
-      return {
-        content: '员工入职流程主要包括以下几个步骤：\n\n1. **入职前准备**：HR发送录用通知书，收集入职材料（身份证复印件、学历证明、离职证明等），安排办公座位和设备，创建员工邮箱和账号。\n\n2. **入职当天**：\n   - 9:00-9:30 报到登记，领取工牌\n   - 9:30-10:30 HR入职培训（公司制度、企业文化）\n   - 10:30-11:30 IT部门设备配置\n   - 11:30-12:00 部门负责人接待\n   - 14:00-17:00 部门内部培训\n\n3. **试用期**：1-3个月，根据岗位性质确定。',
-        sources: [{ title: '员工入职流程' }]
-      };
     }
-    if (question.includes('年假') || question.includes('休假')) {
-      return {
-        content: '关于带薪休假的规定如下：\n\n- **年假**：入职满1年享受5天，每增加1年增加1天，最多15天\n- **病假**：每年15天带薪病假\n- **婚假**：3天，晚婚额外增加7天\n- **产假**：98天，符合条件可延长\n\n此外还有年度体检、餐补、交通补贴等福利。',
-        sources: [{ title: '员工福利制度' }]
-      };
-    }
-    if (question.includes('绩效') || question.includes('考核')) {
-      return {
-        content: '绩效考核制度如下：\n\n**考核周期**：\n- 月度考核：每月进行一次\n- 季度考核：每季度进行一次\n- 年度考核：每年进行一次\n\n**考核维度**：\n- 工作业绩（40%）\n- 工作态度（20%）\n- 团队协作（20%）\n- 创新能力（10%）\n- 职业素养（10%）\n\n**考核等级**：S级（卓越）、A级（优秀）、B级（良好）、C级（合格）、D级（不合格）',
-        sources: [{ title: '绩效考核制度' }]
-      };
-    }
-    if (question.includes('试用')) {
-      return {
-        content: '试用期规定如下：\n\n- 试用期一般为1-3个月，根据岗位性质确定\n- 试用期工资为正式工资的80%\n- 试用期考核通过后转为正式员工\n- 入职前需完成体检\n- 需签订劳动合同和保密协议',
-        sources: [{ title: '员工入职流程' }]
-      };
-    }
-    return {
-      content: '感谢您的提问。您可以尝试询问以下问题：\n- 员工入职流程是怎样的？\n- 年假有多少天？\n- 绩效考核怎么算？\n- 试用期多久？\n- 公司有哪些福利？',
-      sources: []
-    };
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -99,9 +81,11 @@ const KnowledgeBase: React.FC = () => {
                   <FileText size={16} className="text-slate-400" />
                   <span className="text-sm font-medium text-slate-700">{doc.title}</span>
                 </div>
-                <span className="text-xs text-slate-400 ml-6">{doc.category}</span>
               </div>
             ))}
+            {documents.length === 0 && (
+              <p className="text-sm text-slate-400 text-center py-4">加载中...</p>
+            )}
           </div>
         </div>
 

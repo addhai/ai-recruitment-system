@@ -1,4 +1,4 @@
-import { apiRequest } from './api';
+import { apiRequest, API_BASE_URL } from './api';
 import type { User } from '../types';
 
 export interface LoginData {
@@ -16,7 +16,7 @@ export const login = async (data: LoginData): Promise<TokenResponse> => {
   formData.append('username', data.username);
   formData.append('password', data.password);
   
-  const response = await fetch('http://localhost:8000/auth/login', {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
     body: formData,
   });

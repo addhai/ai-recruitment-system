@@ -6,12 +6,22 @@ from langchain_core.output_parsers import JsonOutputParser
 from src.config import settings
 from src.models.database import get_db, Candidate, Resume, Interview, Questionnaire, Evaluation, TalentPool
 
-llm = ChatOpenAI(
-    model=settings.LLM_MODEL,
-    temperature=0.3,
-    api_key=settings.LLM_API_KEY,
-    base_url=settings.LLM_BASE_URL
-)
+_llm_instance: Optional[ChatOpenAI] = None
+
+
+def _get_llm() -> ChatOpenAI:
+    """延迟初始化 LLM"""
+    global _llm_instance
+    if _llm_instance is None:
+        if not settings.LLM_API_KEY:
+            raise RuntimeError("LLM API Key 未配置")
+        _llm_instance = ChatOpenAI(
+            model=settings.LLM_MODEL,
+            temperature=0.3,
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_API_BASE
+        )
+    return _llm_instance
 
 
 @register_tool(
@@ -40,7 +50,7 @@ def parse_resume(resume_text: str) -> Dict[str, Any]:
         input_variables=["resume_text"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     return chain.invoke({"resume_text": resume_text})
 
 
@@ -146,7 +156,7 @@ def create_questionnaire(name: str, type: str, position_requirements: str) -> Di
         input_variables=["name", "type", "position_requirements"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     questions = chain.invoke({
         "name": name,
         "type": type,
@@ -274,7 +284,7 @@ def generate_interview_questions(position: str, candidate_info: str, round: int)
         input_variables=["position", "round", "round_desc", "candidate_info"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     return chain.invoke({
         "position": position,
         "round": round,
@@ -311,7 +321,7 @@ def calculate_match_score(candidate_skills: str, position_requirements: str) -> 
         input_variables=["candidate_skills", "position_requirements"]
     )
     
-    chain = prompt | llm | JsonOutputParser()
+    chain = prompt | _get_llm() | JsonOutputParser()
     return chain.invoke({
         "candidate_skills": candidate_skills,
         "position_requirements": position_requirements
