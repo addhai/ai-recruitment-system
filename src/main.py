@@ -2,12 +2,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.api import auth, candidates, interviews, questionnaires, evaluations, talent_pool, dashboard, sse, knowledge_base
 from src.models.database import init_db
+from src.config import settings
 
 app = FastAPI(title="AI招聘系统", version="1.0.0", description="基于AI的智能招聘管理系统")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -41,4 +42,4 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    uvicorn.run(app, host=settings.API_HOST, port=settings.API_PORT)

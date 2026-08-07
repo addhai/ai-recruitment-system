@@ -69,6 +69,10 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
     if db_email:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # 自注册禁止分配 admin 等特权角色，防止权限提升
+    ALLOWED_SELF_REGISTER_ROLES = {"hr", "interviewer", "viewer"}
+    role = user.role if user.role in ALLOWED_SELF_REGISTER_ROLES else "viewer"
+
     hashed_password = get_password_hash(user.password)
     new_user = User(
         username=user.username,
@@ -76,7 +80,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         password_hash=hashed_password,
         full_name=user.full_name,
         department=user.department,
-        role=user.role
+        role=role
     )
     db.add(new_user)
     db.commit()

@@ -1,4 +1,5 @@
-export const API_BASE_URL = 'http://localhost:8002';
+// 相对路径 /api：本地 dev 由 vite proxy 转发，Docker/生产由 nginx 反代，始终同源
+export const API_BASE_URL = '/api';
 
 export interface ApiRequestOptions {
   method?: string;

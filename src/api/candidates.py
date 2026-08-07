@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, 
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from src.models.database import get_db, Candidate, Resume, WorkflowRun
-from src.models.schemas import CandidateCreate, CandidateUpdate, CandidateResponse, ResumeCreate, ResumeResponse
+from src.models.schemas import CandidateCreate, CandidateUpdate, CandidateResponse, ResumeCreate, ResumeResponse, WorkflowRunResponse
 from src.api.auth import get_current_user
 from src.safety import InputGuard, OutputGuard
 from src.evaluation import evaluation_tracker
@@ -339,6 +339,24 @@ def _build_fallback_result(candidate_id: int, candidate_name: str, position: Opt
     }
 
 
+@router.get("/{candidate_id}/workflow", response_model=WorkflowRunResponse)
+def get_workflow_run(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    """获取候选人最近一次工作流运行记录（含真实进度与结果）"""
+    workflow_run = (
+        db.query(WorkflowRun)
+        .filter(WorkflowRun.candidate_id == candidate_id)
+        .order_by(WorkflowRun.id.desc())
+        .first()
+    )
+    if not workflow_run:
+        raise HTTPException(status_code=404, detail="该候选人暂无工作流运行记录")
+    return workflow_run
+
+
 @router.post("/{candidate_id}/run-workflow")
 async def run_recruitment_workflow(
     candidate_id: int,
@@ -378,17 +396,32 @@ async def run_recruitment_workflow(
     except Exception:
         pass
 
-    # 调用 LangGraph 工作流
+    # 调用 LangGraph 工作流（流式逐节点推进度，实时推送 SSE）
     final_state = None
     fallback_reason = None
     try:
         from src.workflow.recruitment_graph import recruitment_graph
-        final_state = recruitment_graph.invoke({
-            "candidate_id": candidate_id,
-            "candidate_name": candidate.name,
-            "resume_text": candidate.resume_text or "",
-            "position_requirements": position_requirements,
-        })
+        async for state in recruitment_graph.astream(
+            {
+                "candidate_id": candidate_id,
+                "candidate_name": candidate.name,
+                "resume_text": candidate.resume_text or "",
+                "position_requirements": position_requirements,
+            },
+            stream_mode="values",
+        ):
+            progress = int(state.get("workflow_progress") or 0)
+            step = state.get("current_step") or ""
+            # 实时推送进度到前端（SSE）
+            try:
+                await notify_workflow_progress(candidate_id, progress, step, {"candidate_name": candidate.name})
+            except Exception:
+                pass
+            # 持久化进度，便于前端轮询 / 异常恢复
+            workflow_run.progress = progress
+            workflow_run.current_step = step
+            db.commit()
+            final_state = state
     except Exception as e:
         fallback_reason = str(e)
         print(f"[run_workflow] LangGraph 调用失败，使用兜底结果: {e}")

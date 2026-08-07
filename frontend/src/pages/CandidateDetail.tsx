@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, FileText, Award, Target, Users, Play, Loader2, AlertCircle } from 'lucide-react';
 import { getCandidate, getResume, runWorkflow } from '../services/candidates';
-import { apiRequest } from '../services/api';
+import { apiRequest, API_BASE_URL } from '../services/api';
 import type { Candidate } from '../types';
 
 interface InterviewItem {
@@ -86,6 +86,19 @@ const CandidateDetail: React.FC = () => {
         setInterviews(ints);
         setEvaluations(evals);
 
+        // 加载历史工作流结果（真实数据，避免回到空进度）
+        try {
+          const wf = await apiRequest<any>(`/candidates/${candId}/workflow`);
+          if (wf?.status === 'completed' && wf?.results) {
+            setWorkflowResult(wf.results);
+            setWorkflowProgress(100);
+          } else if (wf?.status === 'running') {
+            setWorkflowProgress(wf?.progress ?? 0);
+          }
+        } catch {
+          // 该候选人暂无工作流运行记录，忽略
+        }
+
         // 简历获取失败不阻塞页面
         try {
           const res = await getResume(candId);
@@ -109,14 +122,55 @@ const CandidateDetail: React.FC = () => {
     setWorkflowError(null);
     setWorkflowResult(null);
 
-    // 前端进度模拟（仅用于UI反馈，实际结果以API返回为准）
-    const progressSteps = [
-      { progress: 15, delay: 400 },
-      { progress: 35, delay: 800 },
-      { progress: 55, delay: 1200 },
-      { progress: 75, delay: 1600 },
-    ];
-    progressSteps.forEach((s) => setTimeout(() => setWorkflowProgress(s.progress), s.delay));
+    const token = localStorage.getItem('token');
+    let sseClosed = false;
+    const controller = new AbortController();
+
+    // 订阅 SSE 真实工作流进度（后端逐节点推送，不再前端伪造）
+    const connectProgressSSE = () => {
+      if (!token) return;
+      fetch(`${API_BASE_URL}/sse/notifications`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+        .then((response) => {
+          if (!response.body) return;
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          const read = (): void => {
+            reader
+              .read()
+              .then(({ done, value }) => {
+                if (done || sseClosed) return;
+                buffer += decoder.decode(value, { stream: true });
+                const chunks = buffer.split('\n\n');
+                buffer = chunks.pop() || '';
+                for (const chunk of chunks) {
+                  const dataLine = chunk.split('\n').find((line) => line.startsWith('data: '));
+                  if (!dataLine) continue;
+                  try {
+                    const msg = JSON.parse(dataLine.slice(6));
+                    if (msg.type === 'workflow_progress' && msg.candidate_id === candidate.id) {
+                      setWorkflowProgress(Number(msg.progress) || 0);
+                    }
+                  } catch {
+                    // 忽略无法解析的消息
+                  }
+                }
+                read();
+              })
+              .catch(() => {
+                // 读取中断时静默退出
+              });
+          };
+          read();
+        })
+        .catch(() => {
+          // 连接失败时降级为仅依赖最终 API 返回
+        });
+    };
+    connectProgressSSE();
 
     try {
       const positionRequirements = candidate.position || '';
@@ -126,7 +180,9 @@ const CandidateDetail: React.FC = () => {
     } catch (err: any) {
       setWorkflowError(err.message || 'AI 评估失败，请检查后端服务是否启动');
     } finally {
-      setTimeout(() => setRunningWorkflow(false), 500);
+      sseClosed = true;
+      controller.abort();
+      setRunningWorkflow(false);
     }
   };
 
