@@ -1,7 +1,6 @@
 # AI 招聘系统 (AI Recruitment System)
 
-[![CI](https://github.com/your-username/your-repo/actions/workflows/ci.yml/badge.svg)](https://github.com/your-username/your-repo/actions/workflows/ci.yml)
-<!-- 将上面的 your-username/your-repo 替换为你的 GitHub 仓库地址，push 后徽章即生效 -->
+[![CI](https://github.com/addhai/ai-recruitment-system/actions/workflows/ci.yml/badge.svg)](https://github.com/addhai/ai-recruitment-system/actions/workflows/ci.yml)
 
 基于 AI 的智能招聘管理系统。后端使用 **FastAPI + LangGraph** 驱动多节点招聘工作流（简历解析 → 人岗匹配 → 面试安排 → 综合评估），通过 **SSE** 实时推送工作流进度，并提供完整的候选人管理、面试、问卷、评估、人才库与知识库（RAG）能力。前端为 **React + TypeScript + Vite** 单页应用。
 
