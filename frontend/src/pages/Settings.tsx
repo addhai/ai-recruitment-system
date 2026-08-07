@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Users, Shield, Bell, Palette, Plus, MoreVertical, X, Check, Edit2, Trash2, MessageSquare } from 'lucide-react';
+import { Users, Shield, Bell, Palette, Plus, X, Check, Edit2, Trash2, MessageSquare } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import type { SkinPreset } from '../context/ThemeContext';
+import { getCurrentUser } from '../services/auth';
 
 interface User {
   id: number;
@@ -21,7 +22,7 @@ interface NotificationSetting {
 }
 
 const Settings: React.FC = () => {
-  const { skinId, skin, skins, mode, setSkinId, setMode } = useTheme();
+  const { skinId, skins, mode, setSkinId, setMode } = useTheme();
   const [activeTab, setActiveTab] = useState('users');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -40,6 +41,7 @@ const Settings: React.FC = () => {
     role: 'hr',
     department: '',
   });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [notifications, setNotifications] = useState<NotificationSetting[]>([
     { id: 'new_candidate', title: '新候选人通知', desc: '有新候选人加入时通知', enabled: true },
     { id: 'interview_schedule', title: '面试安排通知', desc: '面试安排和变更时通知', enabled: true },
@@ -64,6 +66,13 @@ const Settings: React.FC = () => {
         // 忽略解析错误
       }
     }
+  }, []);
+
+  useEffect(() => {
+    // 拉取当前登录用户（后端 /auth/users/me）
+    getCurrentUser()
+      .then((u) => setCurrentUser({ id: u.id, username: u.username, name: u.full_name || u.username, email: u.email, role: u.role, department: u.department || '', status: 'active' }))
+      .catch(() => { /* 未登录或接口异常时忽略，保留本地配置 */ });
   }, []);
 
   const tabs = [
@@ -188,6 +197,19 @@ const Settings: React.FC = () => {
           <div className="flex-1 p-6">
             {activeTab === 'users' && (
               <div>
+                {currentUser && (
+                  <div className="flex items-center gap-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/30 dark:to-purple-900/30 border border-blue-100 dark:border-blue-800 rounded-xl mb-6">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
+                      {(currentUser.name || currentUser.username).charAt(0)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-semibold text-slate-800 dark:text-slate-100">{currentUser.name || currentUser.username}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{currentUser.department || '—'} · 角色：{getRoleText(currentUser.role)}</p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">当前登录</span>
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-100">用户管理</h3>
                   <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm">
@@ -195,6 +217,10 @@ const Settings: React.FC = () => {
                     添加用户
                   </button>
                 </div>
+
+                <p className="text-xs text-slate-400 mb-4">
+                  当前账号信息来自后端 <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1 py-0.5 rounded">/auth/users/me</code>；用户增删改查接口将在后续版本提供，下方列表为本地演示数据。
+                </p>
 
                 <div className="overflow-x-auto">
                   <table className="w-full">

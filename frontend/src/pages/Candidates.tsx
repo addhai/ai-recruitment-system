@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Plus, Search, Filter, MoreVertical, FileText, Eye, Trash2, UploadCloud, Loader2 } from 'lucide-react';
+import { Plus, Search, Filter, FileText, Eye, Trash2, UploadCloud, Loader2 } from 'lucide-react';
 import { getCandidates, createCandidate, deleteCandidate, uploadResume } from '../services/candidates';
 import type { Candidate } from '../types';
 

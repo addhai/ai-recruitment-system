@@ -1,16 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users,
-  UserCheck,
   CalendarCheck,
   Trophy,
   Clock,
   TrendingUp,
-  Activity,
   ArrowUpRight,
   X,
 } from 'lucide-react';
-import StatCard from '../components/Dashboard/StatCard';
 import TrendChart from '../components/Dashboard/TrendChart';
 import { getDashboardStats, getWeeklyTrend, getRecentCandidates } from '../services/dashboard';
 import type { DashboardStats, TrendData } from '../types';

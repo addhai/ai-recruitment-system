@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, BookOpen, FileText, Send, Bot, User } from 'lucide-react';
+import { Search, BookOpen, FileText, Bot, User } from 'lucide-react';
 import { queryKnowledgeBase, getDocuments } from '../services/knowledgeBase';
 import type { KnowledgeBaseDocument } from '../services/knowledgeBase';
 
