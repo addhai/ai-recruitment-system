@@ -56,11 +56,11 @@ services:
       - rabbitmq_data:/var/lib/rabbitmq
 
   frontend:
-    image: nginx:1.27-alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
       - "3000:80"
-    volumes:
-      - ./frontend/build:/usr/share/nginx/html
     networks:
       - recruitment-net
     depends_on:
