@@ -23,6 +23,11 @@ export interface Candidate {
   updated_at: string;
 }
 
+export interface InterviewQuestion {
+  question: string;
+  focus: string;
+}
+
 export interface Interview {
   id: number;
   candidate_id: number;
@@ -35,6 +40,7 @@ export interface Interview {
   score: number | null;
   feedback: string | null;
   notes: string | null;
+  questions?: InterviewQuestion[] | null;
   created_at: string;
 }
 

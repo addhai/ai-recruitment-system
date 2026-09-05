@@ -1,6 +1,8 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+from src.safety import OutputGuard
 
 
 class UserCreate(BaseModel):
@@ -117,10 +119,18 @@ class InterviewResponse(BaseModel):
     completed_at: Optional[datetime]
     score: Optional[int]
     feedback: Optional[str]
+    notes: Optional[str] = None
+    questions: Optional[List[Dict[str, Any]]] = None  # AI 生成的该轮面试题
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+    # AI 生成内容出口：递归脱敏 PII（面试官手写 feedback/notes 属业务记录，不在此处理）
+    @field_validator("questions", mode="before")
+    @classmethod
+    def _sanitize_questions(cls, v):
+        return OutputGuard.sanitize_obj(v) if v else v
 
 
 class QuestionnaireCreate(BaseModel):
@@ -131,7 +141,8 @@ class QuestionnaireCreate(BaseModel):
 
 class QuestionnaireResponseCreate(BaseModel):
     candidate_id: int
-    questionnaire_id: int
+    # 路径参数已携带 questionnaire_id，body 中可省略（兼容仍传的客户端）
+    questionnaire_id: Optional[int] = None
     responses: Dict[str, Any]
 
 
@@ -157,7 +168,8 @@ class EvaluationCreate(BaseModel):
 class EvaluationResponse(BaseModel):
     id: int
     candidate_id: int
-    evaluator_id: int
+    # AI 工作流自动写入的评审记录没有人类评估人，允许为空
+    evaluator_id: Optional[int] = None
     dimension: str
     score: int
     comment: Optional[str]
@@ -165,6 +177,12 @@ class EvaluationResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+    # AI 评审评语出口：脱敏 PII，防止模型在评语中复述简历手机号/身份证
+    @field_validator("comment", mode="before")
+    @classmethod
+    def _sanitize_comment(cls, v):
+        return OutputGuard.sanitize(v) if isinstance(v, str) else v
 
 
 class TalentPoolCreate(BaseModel):

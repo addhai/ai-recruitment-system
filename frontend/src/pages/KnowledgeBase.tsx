@@ -5,9 +5,16 @@ import type { KnowledgeBaseDocument } from '../services/knowledgeBase';
 
 const KnowledgeBase: React.FC = () => {
   const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[] }[]>([
+  const [messages, setMessages] = useState<{ role: string; content: string; sources?: any[]; mode?: string }[]>([
     { role: 'assistant', content: '您好！我是企业人事制度知识库助手，有什么可以帮助您的吗？您可以询问关于入职流程、福利制度、绩效考核、培训等方面的问题。' }
   ]);
+
+  const modeLabel: Record<string, { text: string; cls: string }> = {
+    hybrid_rag: { text: '混合检索（向量+关键词）', cls: 'bg-green-50 text-green-600' },
+    bm25_llm: { text: '关键词检索 + AI 生成', cls: 'bg-blue-50 text-blue-600' },
+    fallback: { text: '规则模板回答（AI 未启用）', cls: 'bg-amber-50 text-amber-600' },
+    blocked: { text: '安全拦截', cls: 'bg-red-50 text-red-600' },
+  };
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState<KnowledgeBaseDocument[]>([]);
 
@@ -43,7 +50,8 @@ const KnowledgeBase: React.FC = () => {
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: result.answer,
-        sources: result.sources
+        sources: result.sources,
+        mode: result.mode,
       }]);
     } catch (e: any) {
       setMessages(prev => [...prev, {
@@ -130,6 +138,11 @@ const KnowledgeBase: React.FC = () => {
                   }`} style={{ whiteSpace: 'pre-wrap' }}>
                     {msg.content}
                   </div>
+                  {msg.mode && modeLabel[msg.mode] && (
+                    <span className={`mt-2 inline-block text-[11px] px-2 py-0.5 rounded ${modeLabel[msg.mode].cls}`}>
+                      {modeLabel[msg.mode].text}
+                    </span>
+                  )}
                   {msg.sources && msg.sources.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
                       {msg.sources.map((src, i) => (

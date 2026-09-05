@@ -2,8 +2,10 @@
 FROM node:20-alpine AS builder
 
 WORKDIR /app
+# 国内网络：npm 走 npmmirror 镜像，清空 Docker 注入的宿主机死代理
+RUN npm config set registry https://registry.npmmirror.com
 COPY package.json package-lock.json* ./
-RUN npm install
+RUN unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY; npm ci || npm install
 COPY . .
 RUN npm run build
 

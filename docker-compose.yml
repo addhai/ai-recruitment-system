@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api-service:
     build:
@@ -7,20 +5,22 @@ services:
       dockerfile: docker/api/Dockerfile
     ports:
       - "8000:8000"
+    # 密钥与模型配置从宿主机 .env 透传（LLM_API_KEY / EMBEDDING_API_KEY / SECRET_KEY 等）
+    env_file:
+      - .env
     environment:
+      # 容器内覆盖数据库指向 postgres；.env 里的 sqlite 仅用于本地开发
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/recruitment
-      - REDIS_URL=redis://redis:6379/0
-      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-      - DEBUG=true
     depends_on:
-      - postgres
-      - redis
-      - rabbitmq
+      postgres:
+        condition: service_healthy
     networks:
       - recruitment-net
     volumes:
-      - ./src:/app/src
-    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+      # 向量库持久化（Chroma），容器重建不丢索引
+      - chroma_data:/app/src/data/chroma
+      # LangGraph 挂起状态持久化（等待问卷/面试的 interrupt 状态，丢失则进行中的流程无法 resume）
+      - workflow_data:/app/data
 
   postgres:
     image: postgres:16-alpine
@@ -34,26 +34,12 @@ services:
       - recruitment-net
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./docker/postgres/init:/docker-entrypoint-initdb.d
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    networks:
-      - recruitment-net
-    volumes:
-      - redis_data:/data
-
-  rabbitmq:
-    image: rabbitmq:4.0-management-alpine
-    ports:
-      - "5672:5672"
-      - "15672:15672"
-    networks:
-      - recruitment-net
-    volumes:
-      - rabbitmq_data:/var/lib/rabbitmq
+    # 表结构由后端 ORM（SQLAlchemy create_all）首次启动时自动创建，种子用户幂等写入
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d recruitment"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   frontend:
     build:
@@ -72,5 +58,5 @@ networks:
 
 volumes:
   pg_data:
-  redis_data:
-  rabbitmq_data:
+  chroma_data:
+  workflow_data:

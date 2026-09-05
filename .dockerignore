@@ -1,0 +1,18 @@
+# 后端构建上下文排除项（api-service 构建上下文为仓库根目录）
+venv/
+.venv/
+**__pycache__/
+*.pyc
+.git/
+.gitignore
+tests/
+*.db
+recruitment.db
+src/data/chroma/
+frontend/
+docker/
+*.md
+.env
+.env.*
+.trae/
+.pytest_cache/

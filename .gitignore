@@ -15,3 +15,16 @@ __pycache__/
 .venv/
 .env.*
 docker-compose.override.yml
+
+# agent 工作记忆目录(不含密钥，但属内部工作区，不进作品集)
+.workbuddy/
+
+# 运行时数据：本地 SQLite 库、Chroma 向量索引、LangGraph checkpoint，均由应用自动生成
+*.db
+data/
+src/data/chroma/
+
+# 测试产物
+.coverage
+out*.txt
+pytest_output.txt

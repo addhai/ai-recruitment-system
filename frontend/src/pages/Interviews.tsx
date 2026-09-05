@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Calendar, Clock, CheckCircle, PlayCircle, XCircle, Loader2, AlertCircle } from 'lucide-react';
+import { Plus, Calendar, Clock, CheckCircle, PlayCircle, XCircle, Loader2, AlertCircle, FileText } from 'lucide-react';
 import { getInterviews, createInterview, completeInterview } from '../services/interviews';
 import { getCandidates } from '../services/candidates';
 import type { Interview, Candidate } from '../types';
@@ -177,7 +177,14 @@ const Interviews: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 text-slate-600">{iv.position}</td>
-                      <td className="px-6 py-4 text-slate-600">第{iv.round}轮</td>
+                      <td className="px-6 py-4 text-slate-600">
+                        第{iv.round}轮
+                        {iv.questions && iv.questions.length > 0 && (
+                          <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] bg-blue-50 text-blue-600" title={`AI 已生成 ${iv.questions.length} 道面试题`}>
+                            <FileText size={11} />AI题
+                          </span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-slate-600">{iv.interviewer_id ? `面试官#${iv.interviewer_id}` : '待定'}</td>
                       <td className="px-6 py-4 text-slate-600">{iv.scheduled_at ? new Date(iv.scheduled_at).toLocaleString() : '-'}</td>
                       <td className="px-6 py-4">
@@ -187,8 +194,10 @@ const Interviews: React.FC = () => {
                         {iv.score ? <span className="font-medium text-slate-800">{iv.score}分</span> : <span className="text-slate-400">-</span>}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {iv.status !== 'completed' && (
+                        {iv.status !== 'completed' ? (
                           <button onClick={() => openComplete(iv)} className="text-blue-600 hover:text-blue-700 text-sm font-medium">完成面试</button>
+                        ) : (
+                          <button onClick={() => openComplete(iv)} className="text-slate-500 hover:text-slate-700 text-sm font-medium">查看详情</button>
                         )}
                       </td>
                     </tr>
@@ -257,41 +266,70 @@ const Interviews: React.FC = () => {
 
       {/* 完成面试弹窗 */}
       {showComplete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl w-full max-w-md p-6 shadow-xl">
-            <h3 className="text-lg font-semibold text-slate-800 mb-4">完成面试</h3>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-800 mb-1">{showComplete.status === 'completed' ? '面试详情' : '完成面试'}（第{showComplete.round}轮）</h3>
+            <p className="text-sm text-slate-500 mb-4">候选人：{candidateMap.get(showComplete.candidate_id) || `#${showComplete.candidate_id}`} · {showComplete.position}</p>
+
+            {/* AI 生成的面试题：面试官对照提问与评分 */}
+            {showComplete.questions && showComplete.questions.length > 0 && (
+              <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50/60 p-4">
+                <div className="flex items-center gap-2 mb-3">
+                  <FileText size={15} className="text-blue-600" />
+                  <span className="text-sm font-medium text-blue-800">AI 面试题（{showComplete.questions.length} 题）</span>
+                </div>
+                <ol className="space-y-3">
+                  {showComplete.questions.map((q, i) => (
+                    <li key={i} className="text-sm">
+                      <div className="font-medium text-slate-800">{i + 1}. {q.question}</div>
+                      {q.focus && <div className="mt-1 text-xs text-slate-500 leading-relaxed">考察要点：{q.focus}</div>}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">评分（0-100）</label>
                 <input
                   type="number" min={0} max={100}
                   value={completeForm.score}
+                  disabled={showComplete.status === 'completed'}
                   onChange={(e) => setCompleteForm({ ...completeForm, score: Number(e.target.value) })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">反馈</label>
                 <textarea
                   value={completeForm.feedback}
+                  disabled={showComplete.status === 'completed'}
                   onChange={(e) => setCompleteForm({ ...completeForm, feedback: e.target.value })}
                   rows={3}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none disabled:bg-slate-50 disabled:text-slate-500"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">备注</label>
                 <input
                   value={completeForm.notes}
+                  disabled={showComplete.status === 'completed'}
                   onChange={(e) => setCompleteForm({ ...completeForm, notes: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50 disabled:text-slate-500"
                 />
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setShowComplete(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors">取消</button>
-                <button onClick={submitComplete} disabled={submitting} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
-                  {submitting ? '提交中...' : '确认完成'}
-                </button>
+                {showComplete.status === 'completed' ? (
+                  <button onClick={() => setShowComplete(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors">关闭</button>
+                ) : (
+                  <>
+                    <button onClick={() => setShowComplete(null)} className="flex-1 px-4 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 transition-colors">取消</button>
+                    <button onClick={submitComplete} disabled={submitting} className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+                      {submitting ? '提交中...' : '确认完成'}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

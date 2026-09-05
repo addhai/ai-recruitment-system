@@ -43,12 +43,13 @@ class Candidate(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    resume = relationship("Resume", back_populates="candidate", uselist=False)
-    interviews = relationship("Interview", back_populates="candidate")
-    questionnaire_responses = relationship("QuestionnaireResponse", back_populates="candidate")
-    evaluations = relationship("Evaluation", back_populates="candidate")
-    talent_pool = relationship("TalentPool", back_populates="candidate", uselist=False)
-    workflow_runs = relationship("WorkflowRun", back_populates="candidate")
+    # cascade：删除候选人时级联清理全部关联业务行，避免孤儿数据
+    resume = relationship("Resume", back_populates="candidate", uselist=False, cascade="all, delete-orphan")
+    interviews = relationship("Interview", back_populates="candidate", cascade="all, delete-orphan")
+    questionnaire_responses = relationship("QuestionnaireResponse", back_populates="candidate", cascade="all, delete-orphan")
+    evaluations = relationship("Evaluation", back_populates="candidate", cascade="all, delete-orphan")
+    talent_pool = relationship("TalentPool", back_populates="candidate", uselist=False, cascade="all, delete-orphan")
+    workflow_runs = relationship("WorkflowRun", back_populates="candidate", cascade="all, delete-orphan")
 
 
 class Resume(Base):
@@ -81,6 +82,7 @@ class Interview(Base):
     notes = Column(Text)
     score = Column(Integer)
     feedback = Column(Text)
+    questions = Column(JSON)  # AI 生成的该轮面试题 [{question, focus}]
     created_at = Column(DateTime, default=datetime.utcnow)
 
     candidate = relationship("Candidate", back_populates="interviews")
@@ -170,8 +172,32 @@ def get_db():
         db.close()
 
 
+def _ensure_columns():
+    """轻量列迁移：create_all 不会给已存在的旧表加列，检查后补齐缺失列。
+
+    用 SQLAlchemy Inspector 做跨方言列探测（SQLite/PostgreSQL 通用），
+    避免裸写 SQLite 专有的 PRAGMA 导致在 PostgreSQL 上启动崩溃。
+    """
+    from sqlalchemy import inspect, text
+    migrations = {
+        "interviews": [("questions", "JSON")],
+    }
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table, cols in migrations.items():
+            if table not in existing_tables:
+                continue  # 新库 create_all 已建全，无需迁移
+            existing_cols = {c["name"] for c in inspector.get_columns(table)}
+            for col_name, col_type in cols:
+                if col_name not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
+                    print(f"[db] 迁移：{table} 新增列 {col_name}")
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _ensure_columns()
 
     import bcrypt
 

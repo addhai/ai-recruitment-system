@@ -1,11 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict, Any
 from src.models.database import get_db, Questionnaire, QuestionnaireResponse
 from src.models.schemas import QuestionnaireCreate, QuestionnaireResponseCreate, QuestionnaireResponseResponse
 from src.api.auth import get_current_user
+from src.safety import InputGuard
 
 router = APIRouter(prefix="/questionnaires", tags=["questionnaires"])
+
+
+async def _resume_workflow_after_questionnaire(candidate_id: int, questionnaire_id: int, responses: Dict[str, Any]):
+    """问卷作答提交后自动恢复工作流：AI 评分并判定是否进入面试环节"""
+    try:
+        from src.workflow.runner import resume_workflow
+        await resume_workflow(candidate_id, "await_questionnaire", {
+            "questionnaire_id": questionnaire_id,
+            "responses": responses,
+        })
+    except Exception as e:
+        print(f"[questionnaires] 问卷提交后自动恢复工作流失败: {e}")
 
 
 @router.get("/", response_model=List[dict])
@@ -88,11 +101,23 @@ def delete_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), c
 
 
 @router.post("/{questionnaire_id}/responses", response_model=QuestionnaireResponseResponse)
-def submit_response(questionnaire_id: int, response: QuestionnaireResponseCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def submit_response(
+    questionnaire_id: int,
+    response: QuestionnaireResponseCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    """提交问卷作答。提交后自动恢复招聘工作流：AI 评分，达标则自动进入面试排期"""
     q = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
     if not q:
         raise HTTPException(status_code=404, detail="Questionnaire not found")
-    
+
+    # 答案会进入 AI 评分节点，先过输入护栏拦截提示注入
+    is_safe, reason = InputGuard.check_dict_values(response.responses)
+    if not is_safe:
+        raise HTTPException(status_code=400, detail=f"问卷答案未通过安全检查：{reason}")
+
     new_response = QuestionnaireResponse(
         candidate_id=response.candidate_id,
         questionnaire_id=questionnaire_id,
@@ -101,6 +126,12 @@ def submit_response(questionnaire_id: int, response: QuestionnaireResponseCreate
     db.add(new_response)
     db.commit()
     db.refresh(new_response)
+
+    # 自动恢复工作流（评分由工作流节点完成并回写本记录的 score 字段）
+    background_tasks.add_task(
+        _resume_workflow_after_questionnaire,
+        response.candidate_id, questionnaire_id, response.responses,
+    )
     return new_response
 
 

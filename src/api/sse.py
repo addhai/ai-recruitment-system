@@ -9,13 +9,17 @@ router = APIRouter(prefix="/sse", tags=["sse"])
 
 async def event_stream(user_id: str):
     messages = []
-    
-    async def callback(message):
+
+    # 注意必须是普通函数：notification.broadcast 同步调用 callback，
+    # 若声明为 async def 会只创建协程不执行，导致事件永远推不出去
+    def callback(message):
         messages.append(message)
-    
+
     await subscribe(user_id, callback)
     
     try:
+        # 连接建立即发首事件：客户端可确认链路已通，也避免空流导致的长连接无响应
+        yield 'data: {"type": "connected"}\n\n'
         while True:
             while messages:
                 message = messages.pop(0)

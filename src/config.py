@@ -17,10 +17,16 @@ class Settings(BaseSettings):
     LLM_API_BASE: str = "https://api.deepseek.com"
     LLM_MODEL: str = "deepseek-chat"
     LLM_COMPLEX_MODEL: str = "deepseek-chat"
-    # Embedding 模型：必须与 embedding 提供方一致（维度随之匹配）
-    # 若使用 OpenAI 兼容端点，常见为 text-embedding-3-small(1536) / text-embedding-3-large(3072)
-    EMBEDDING_MODEL: str = "text-embedding-3-small"
-    EMBEDDING_DIMENSIONS: int = 1536
+    # Embedding 独立配置：DeepSeek 不提供 embedding 接口，默认走硅基流动（OpenAI 兼容）
+    # EMBEDDING_API_KEY 留空时回退复用 LLM_API_KEY（适用于同一网关同时提供 chat+embedding 的场景）
+    EMBEDDING_API_KEY: str = ""
+    EMBEDDING_API_BASE: str = "https://api.siliconflow.cn/v1"
+    EMBEDDING_MODEL: str = "BAAI/bge-large-zh-v1.5"
+    EMBEDDING_DIMENSIONS: int = 1024
+
+    @property
+    def embedding_api_key(self) -> str:
+        return self.EMBEDDING_API_KEY or self.LLM_API_KEY
 
     DATABASE_URL: str = "sqlite:///./recruitment.db"
     SQLITE_URL: str = "sqlite:///./recruitment.db"
@@ -53,6 +59,9 @@ class Settings(BaseSettings):
     FEISHU_APP_ID: Optional[str] = None
     FEISHU_APP_SECRET: Optional[str] = None
     FEISHU_WEBHOOK_URL: Optional[str] = None  # 机器人webhook
+
+    # 简历上传后是否自动启动 AI 工作流（自动化中台开关，关闭后需手动点"启动AI评估"）
+    AUTO_START_WORKFLOW: bool = True
 
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"

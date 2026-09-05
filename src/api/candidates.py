@@ -1,39 +1,24 @@
 import os
-import time
 import tempfile
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Body, UploadFile, File, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from src.models.database import get_db, Candidate, Resume, WorkflowRun
 from src.models.schemas import CandidateCreate, CandidateUpdate, CandidateResponse, ResumeCreate, ResumeResponse, WorkflowRunResponse
 from src.api.auth import get_current_user
 from src.safety import InputGuard, OutputGuard
-from src.evaluation import evaluation_tracker
-from src.sse.notification import (
-    notify_candidate_added,
-    notify_workflow_progress,
-    notify_hiring_decision,
-)
-from src.services.feishu_notify import notify_workflow_completed_async
+from src.sse.notification import notify_candidate_added
+from src.workflow.runner import start_workflow, resume_workflow, trigger_after_upload
 from src.services.resume_cleaner import (
     validate_resume_file,
     parse_resume_with_fallback,
-    clean_resume_text,
     segment_text,
-    MAX_FILE_SIZE,
 )
 
 
 def _sanitize_output(obj):
-    """递归过滤输出对象中的字符串字段，移除PII信息"""
-    if isinstance(obj, str):
-        return OutputGuard.sanitize(obj)
-    if isinstance(obj, dict):
-        return {k: _sanitize_output(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_sanitize_output(item) for item in obj]
-    return obj
+    """递归过滤输出对象中的 PII（实现统一收敛在 OutputGuard.sanitize_obj）"""
+    return OutputGuard.sanitize_obj(obj)
 
 router = APIRouter(prefix="/candidates", tags=["candidates"])
 
@@ -123,13 +108,16 @@ def update_candidate(candidate_id: int, candidate: CandidateUpdate, db: Session 
 
 
 @router.delete("/{candidate_id}")
-def delete_candidate(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def delete_candidate(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
-    db.delete(candidate)
+    # 先清 checkpoint：级联删除会移除 WorkflowRun 行，事后就取不到 thread_id 了
+    from src.workflow.runner import purge_candidate_workflow_data
+    purged = await purge_candidate_workflow_data(candidate_id)
+    db.delete(candidate)  # ORM 级联删除关联业务行
     db.commit()
-    return {"message": "Candidate deleted"}
+    return {"message": "Candidate deleted", "purged_checkpoint_threads": purged}
 
 
 @router.post("/{candidate_id}/resume", response_model=ResumeResponse)
@@ -164,6 +152,7 @@ def get_resume(candidate_id: int, db: Session = Depends(get_db), current_user=De
 @router.post("/{candidate_id}/upload-resume")
 async def upload_resume_file(
     candidate_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
@@ -220,48 +209,12 @@ async def upload_resume_file(
     chunks = segment_text(parsed_text, max_chunk_size=3000)
     primary_chunk = chunks[0] if chunks else parsed_text
 
-    # 7. 调用 workflow 的 parse_resume 做结构化解析
-    parsed_data = None
+    # 7. 结构化解析由 AI 工作流统一负责（上传后自动触发，见步骤 11）；
+    #    此处先保存原文快照，保证工作流运行前/关闭自动触发时简历页也有内容
+    parsed_data = {"raw_text": parsed_text[:2000]}
     skills = None
     experience = None
     education = None
-    try:
-        from src.workflow.recruitment_graph import parse_resume
-        state = parse_resume({
-            "candidate_id": candidate_id,
-            "candidate_name": candidate.name,
-            "resume_text": primary_chunk,
-            "position_requirements": "",
-        })
-        parsed_data = state.get("parsed_resume")
-        if isinstance(parsed_data, dict):
-            skills = parsed_data.get("skills")
-            experience_list = parsed_data.get("experience")
-            if isinstance(experience_list, list):
-                experience = "; ".join(
-                    str(item) if not isinstance(item, dict)
-                    else " - ".join(str(v) for v in item.values())
-                    for item in experience_list
-                )
-            elif experience_list is None:
-                experience = None
-            else:
-                experience = str(experience_list)
-            education_list = parsed_data.get("education")
-            if isinstance(education_list, list):
-                education = "; ".join(
-                    str(item) if not isinstance(item, dict)
-                    else " - ".join(str(v) for v in item.values())
-                    for item in education_list
-                )
-            elif education_list is None:
-                education = None
-            else:
-                education = str(education_list)
-    except Exception as e:
-        # LLM 未配置或其他异常时退化为只保存原文
-        print(f"[upload_resume] 调用 parse_resume 失败，仅保存原文: {e}")
-        parsed_data = {"raw_text": parsed_text[:2000], "parse_error": str(e)}
 
     # 8. 更新或创建 Resume 记录
     resume = db.query(Resume).filter(Resume.candidate_id == candidate_id).first()
@@ -290,7 +243,10 @@ async def upload_resume_file(
     db.refresh(resume)
     db.refresh(candidate)
 
-    # 10. 输出安全防护：过滤返回结果中的 PII 信息
+    # 10. 自动触发全链路工作流（简历解析→匹配→问卷挂起），后台执行不阻塞上传响应
+    background_tasks.add_task(trigger_after_upload, candidate_id)
+
+    # 11. 输出安全防护：过滤返回结果中的 PII 信息
     return _sanitize_output({
         "message": "简历上传成功",
         "candidate_id": candidate_id,
@@ -304,39 +260,6 @@ async def upload_resume_file(
         "experience": experience,
         "education": education,
     })
-
-
-def _build_fallback_result(candidate_id: int, candidate_name: str, position: Optional[str], reason: str) -> dict:
-    """当 LangGraph 工作流调用失败时的兜底结果（不使用 random）"""
-    skill_match_score = 70
-    experience_match_score = 70
-    education_match_score = 70
-    culture_match_score = 70
-    overall_score = 70
-    final_decision = "待定，进入人才池"
-
-    return {
-        "candidate_id": candidate_id,
-        "candidate_name": candidate_name,
-        "position": position,
-        "final_decision": final_decision,
-        "overall_score": overall_score,
-        "skill_match_score": skill_match_score,
-        "experience_match_score": experience_match_score,
-        "education_match_score": education_match_score,
-        "culture_match_score": culture_match_score,
-        "workflow_progress": 100,
-        "current_step": "completed",
-        "analysis": {
-            "skills_analysis": "工作流不可用，使用默认评分",
-            "experience_analysis": "工作流不可用，使用默认评分",
-            "education_analysis": "工作流不可用，使用默认评分",
-            "culture_analysis": "工作流不可用，使用默认评分",
-            "recommendation": final_decision,
-            "fallback_reason": reason,
-        },
-        "completed_at": datetime.utcnow().isoformat(),
-    }
 
 
 @router.get("/{candidate_id}/workflow", response_model=WorkflowRunResponse)
@@ -364,6 +287,11 @@ async def run_recruitment_workflow(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
+    """启动全链路招聘工作流。
+
+    自动推进到第一个挂起点（问卷待作答）后返回 waiting_human；
+    后续人工事件（问卷作答、面试结果录入）由对应 API 自动恢复工作流，无需重复调用本接口。
+    """
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -376,156 +304,34 @@ async def run_recruitment_workflow(
         if not is_safe:
             raise HTTPException(status_code=400, detail=f"{label}未通过安全检查：{reason}")
 
-    # 评估追踪：记录工作流开始时间
-    workflow_start_time = time.time()
+    result = await start_workflow(candidate_id, position_requirements)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("error", "工作流启动失败"))
+    return _sanitize_output(result)
 
-    # 创建 WorkflowRun 记录
-    workflow_run = WorkflowRun(
-        candidate_id=candidate_id,
-        status="running",
-        current_step="start",
-        progress=0,
-    )
-    db.add(workflow_run)
-    db.commit()
-    db.refresh(workflow_run)
 
-    # 通知前端工作流开始
-    try:
-        await notify_workflow_progress(candidate_id, 0, "start", {"candidate_name": candidate.name})
-    except Exception:
-        pass
+@router.post("/{candidate_id}/workflow/resume")
+async def resume_recruitment_workflow(
+    candidate_id: int,
+    body: dict = Body(..., description="人工事件：wait_type + payload"),
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    """人工事件恢复挂起的工作流（通常由问卷提交/面试完成接口自动调用，也可手动触发）。
 
-    # 调用 LangGraph 工作流（流式逐节点推进度，实时推送 SSE）
-    final_state = None
-    fallback_reason = None
-    try:
-        from src.workflow.recruitment_graph import recruitment_graph
-        async for state in recruitment_graph.astream(
-            {
-                "candidate_id": candidate_id,
-                "candidate_name": candidate.name,
-                "resume_text": candidate.resume_text or "",
-                "position_requirements": position_requirements,
-            },
-            stream_mode="values",
-        ):
-            progress = int(state.get("workflow_progress") or 0)
-            step = state.get("current_step") or ""
-            # 实时推送进度到前端（SSE）
-            try:
-                await notify_workflow_progress(candidate_id, progress, step, {"candidate_name": candidate.name})
-            except Exception:
-                pass
-            # 持久化进度，便于前端轮询 / 异常恢复
-            workflow_run.progress = progress
-            workflow_run.current_step = step
-            db.commit()
-            final_state = state
-    except Exception as e:
-        fallback_reason = str(e)
-        print(f"[run_workflow] LangGraph 调用失败，使用兜底结果: {e}")
+    wait_type: await_questionnaire（payload 含 questionnaire_id 与 responses）
+               await_interview（payload 含 interview_id、round、score、feedback）
+    """
+    wait_type = body.get("wait_type")
+    payload = body.get("payload") or {}
+    if wait_type not in ("await_questionnaire", "await_interview"):
+        raise HTTPException(status_code=400, detail="wait_type 必须为 await_questionnaire 或 await_interview")
 
-    if final_state is None:
-        result = _build_fallback_result(
-            candidate_id, candidate.name, candidate.position, fallback_reason or "unknown"
-        )
-    else:
-        skill_match_score = int(final_state.get("skill_match_score") or 0)
-        culture_match_score = int(final_state.get("culture_match_score") or 0)
-        # 经验与教育分数从 skill_match_details 中提取
-        skill_details = final_state.get("skill_match_details") or {}
-        experience_match_score = int(
-            (skill_details.get("experience_analysis") or {}).get("score", skill_match_score)
-        )
-        education_match_score = int(
-            (skill_details.get("education_analysis") or {}).get("score", skill_match_score)
-        )
+    # 手动触发场景下先校验候选人存在，避免对不存在的 ID 盲目恢复
+    if not db.query(Candidate).filter(Candidate.id == candidate_id).first():
+        raise HTTPException(status_code=404, detail="Candidate not found")
 
-        final_decision = final_state.get("final_decision") or "待定"
-        final_recommendation = final_state.get("final_recommendation") or {}
-        overall_score = int(final_recommendation.get("overall_score", 0)) if isinstance(final_recommendation, dict) else 0
-        if not overall_score:
-            overall_score = int(
-                (skill_match_score + experience_match_score + education_match_score + culture_match_score) / 4
-            )
-
-        # 如果决策为空，则按综合评分给出兜底决策
-        if not final_state.get("final_decision"):
-            if overall_score >= 85:
-                final_decision = "强烈推荐录用"
-            elif overall_score >= 75:
-                final_decision = "推荐进入面试"
-            elif overall_score >= 60:
-                final_decision = "待定，进入人才池"
-            else:
-                final_decision = "不推荐"
-
-        result = {
-            "candidate_id": candidate_id,
-            "candidate_name": candidate.name,
-            "position": candidate.position,
-            "final_decision": final_decision,
-            "overall_score": overall_score,
-            "skill_match_score": skill_match_score,
-            "experience_match_score": experience_match_score,
-            "education_match_score": education_match_score,
-            "culture_match_score": culture_match_score,
-            "workflow_progress": int(final_state.get("workflow_progress", 100)),
-            "current_step": final_state.get("current_step", "completed"),
-            "analysis": {
-                "skills_analysis": f"候选人技能与职位要求匹配度为{skill_match_score}%",
-                "experience_analysis": f"工作经验匹配度为{experience_match_score}%",
-                "education_analysis": f"教育背景匹配度为{education_match_score}%",
-                "culture_analysis": f"文化契合度评估为{culture_match_score}%",
-                "recommendation": final_decision,
-                "final_recommendation": final_recommendation,
-            },
-            "completed_at": datetime.utcnow().isoformat(),
-        }
-
-    # 更新 WorkflowRun
-    workflow_run.status = "completed"
-    workflow_run.current_step = "completed"
-    workflow_run.progress = 100
-    workflow_run.results = result
-    db.commit()
-
-    # SSE 通知工作流完成 + 招聘决策
-    try:
-        await notify_workflow_progress(candidate_id, 100, "completed", {"final_decision": result["final_decision"]})
-        await notify_hiring_decision(candidate_id, result["final_decision"], result["overall_score"])
-    except Exception:
-        pass
-
-    # 飞书通知工作流完成
-    try:
-        await notify_workflow_completed_async(
-            candidate.name,
-            candidate.position or "",
-            result["final_decision"],
-            result["overall_score"],
-        )
-    except Exception as e:
-        print(f"[run_workflow] 飞书通知失败: {e}")
-
-    # 评估追踪：记录本次工作流运行的质量指标
-    try:
-        duration_ms = (time.time() - workflow_start_time) * 1000
-        evaluation_tracker.record(
-            candidate_id=candidate_id,
-            scores={
-                "overall_score": result.get("overall_score", 0),
-                "skill_match_score": result.get("skill_match_score", 0),
-                "experience_match_score": result.get("experience_match_score", 0),
-                "education_match_score": result.get("education_match_score", 0),
-                "culture_match_score": result.get("culture_match_score", 0),
-            },
-            decision=result.get("final_decision", ""),
-            duration_ms=duration_ms,
-        )
-    except Exception as e:
-        print(f"[run_workflow] 评估追踪记录失败: {e}")
-
-    # 输出安全防护：过滤返回结果中的 PII 信息
+    result = await resume_workflow(candidate_id, wait_type, payload)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result.get("error", "工作流恢复失败"))
     return _sanitize_output(result)

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, FileText, Award, Target, Users, Play, Loader2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Award, Target, Users, Play, Loader2, AlertCircle, Clock } from 'lucide-react';
 import { getCandidate, getResume, runWorkflow } from '../services/candidates';
 import { apiRequest, API_BASE_URL } from '../services/api';
 import type { Candidate } from '../types';
@@ -17,13 +17,14 @@ interface InterviewItem {
   score: number | null;
   feedback: string | null;
   notes: string | null;
+  questions?: { question: string; focus: string }[] | null;
   created_at: string;
 }
 
 interface EvaluationItem {
   id: number;
   candidate_id: number;
-  evaluator_id: number;
+  evaluator_id: number | null;
   dimension: string;
   score: number;
   comment: string | null;
@@ -65,55 +66,72 @@ const CandidateDetail: React.FC = () => {
   const [interviews, setInterviews] = useState<InterviewItem[]>([]);
   const [evaluations, setEvaluations] = useState<EvaluationItem[]>([]);
   const [workflowResult, setWorkflowResult] = useState<WorkflowResult | null>(null);
+  const [workflowWaiting, setWorkflowWaiting] = useState<{ wait_type: string; message: string; progress: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadData = useCallback(async (silent = false) => {
     if (!id) return;
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+    if (!silent) setLoading(true);
+    setError(null);
+    try {
+      const candId = Number(id);
+      // 并行获取候选人基本信息、简历、面试记录、评估记录
+      const [cand, ints, evals] = await Promise.all([
+        getCandidate(candId),
+        apiRequest<InterviewItem[]>(`/interviews/?candidate_id=${candId}`).catch(() => []),
+        apiRequest<EvaluationItem[]>(`/evaluations/?candidate_id=${candId}`).catch(() => []),
+      ]);
+      setCandidate(cand);
+      setInterviews(ints);
+      setEvaluations(evals);
+
+      // 加载工作流状态：completed 显示决策结果，waiting_human 显示等待环节
       try {
-        const candId = Number(id);
-        // 并行获取候选人基本信息、简历、面试记录、评估记录
-        const [cand, ints, evals] = await Promise.all([
-          getCandidate(candId),
-          apiRequest<InterviewItem[]>(`/interviews/?candidate_id=${candId}`).catch(() => []),
-          apiRequest<EvaluationItem[]>(`/evaluations/?candidate_id=${candId}`).catch(() => []),
-        ]);
-        setCandidate(cand);
-        setInterviews(ints);
-        setEvaluations(evals);
-
-        // 加载历史工作流结果（真实数据，避免回到空进度）
-        try {
-          const wf = await apiRequest<any>(`/candidates/${candId}/workflow`);
-          if (wf?.status === 'completed' && wf?.results) {
-            setWorkflowResult(wf.results);
-            setWorkflowProgress(100);
-          } else if (wf?.status === 'running') {
-            setWorkflowProgress(wf?.progress ?? 0);
-          }
-        } catch {
-          // 该候选人暂无工作流运行记录，忽略
+        const wf = await apiRequest<any>(`/candidates/${candId}/workflow`);
+        if (wf?.status === 'completed' && wf?.results?.final_decision) {
+          setWorkflowResult(wf.results);
+          setWorkflowProgress(100);
+          setWorkflowWaiting(null);
+        } else if (wf?.status === 'waiting_human') {
+          const waitType = wf?.results?.interrupt?.type || wf?.current_step || '';
+          const round = wf?.results?.interrupt?.round;
+          setWorkflowWaiting({
+            wait_type: waitType,
+            progress: wf?.progress ?? 0,
+            message: waitType === 'await_questionnaire'
+              ? '问卷已自动生成，等待作答提交后将自动进入面试排期'
+              : waitType === 'await_interview'
+                ? `第${round || ''}轮面试已自动排期，等待在「面试管理」中录入结果`
+                : '等待人工环节完成',
+          });
+          setWorkflowProgress(wf?.progress ?? 0);
+          setWorkflowResult(null);
+        } else if (wf?.status === 'running') {
+          setWorkflowProgress(wf?.progress ?? 0);
         }
-
-        // 简历获取失败不阻塞页面
-        try {
-          const res = await getResume(candId);
-          setResume(res);
-        } catch {
-          setResume(null);
-        }
-      } catch (err: any) {
-        setError(err.message || '加载候选人详情失败');
-      } finally {
-        setLoading(false);
+      } catch {
+        // 该候选人暂无工作流运行记录，忽略
       }
-    };
-    fetchData();
+
+      // 简历获取失败不阻塞页面
+      try {
+        const res = await getResume(candId);
+        setResume(res);
+      } catch {
+        setResume(null);
+      }
+    } catch (err: any) {
+      setError(err.message || '加载候选人详情失败');
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, [id]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const runWorkflowHandler = async () => {
     if (!candidate) return;
@@ -152,7 +170,12 @@ const CandidateDetail: React.FC = () => {
                   try {
                     const msg = JSON.parse(dataLine.slice(6));
                     if (msg.type === 'workflow_progress' && msg.candidate_id === candidate.id) {
-                      setWorkflowProgress(Number(msg.progress) || 0);
+                      const p = Number(msg.progress) || 0;
+                      setWorkflowProgress(p);
+                      // 后台自动恢复跑到终局后，静默刷新候选人状态/面试/评估数据
+                      if (p >= 100) {
+                        setTimeout(() => loadData(true), 2000);
+                      }
                     }
                   } catch {
                     // 忽略无法解析的消息
@@ -175,8 +198,21 @@ const CandidateDetail: React.FC = () => {
     try {
       const positionRequirements = candidate.position || '';
       const result = await runWorkflow(candidate.id, positionRequirements);
-      setWorkflowResult(result);
-      setWorkflowProgress(100);
+      if (result.status === 'waiting_human' || result.status === 'already_active') {
+        // 工作流停在人工挂起点（问卷待作答 / 面试待录入），等待外部事件自动恢复
+        setWorkflowResult(null);
+        setWorkflowWaiting({
+          wait_type: result.wait_type || result.current_step || '',
+          progress: result.progress || 0,
+          message: result.message || '招聘流程进行中，等待人工环节完成',
+        });
+        setWorkflowProgress(result.progress || 0);
+      } else if (result.final_decision) {
+        setWorkflowResult(result);
+        setWorkflowProgress(100);
+        setWorkflowWaiting(null);
+        loadData(true);
+      }
     } catch (err: any) {
       setWorkflowError(err.message || 'AI 评估失败，请检查后端服务是否启动');
     } finally {
@@ -197,10 +233,13 @@ const CandidateDetail: React.FC = () => {
   const getStatusText = (status: string) => {
     const map: Record<string, string> = {
       pending: '待处理',
+      screening: 'AI筛选中',
+      questionnaire: '问卷测评中',
       interviewed: '面试中',
       interviewing: '面试中',
       hired: '已录用',
       rejected: '已拒绝',
+      talent_pool: '人才池',
     };
     return map[status] || status;
   };
@@ -210,6 +249,9 @@ const CandidateDetail: React.FC = () => {
       case 'hired': return 'bg-green-100 text-green-700';
       case 'interviewed':
       case 'interviewing': return 'bg-blue-100 text-blue-700';
+      case 'screening':
+      case 'questionnaire': return 'bg-indigo-100 text-indigo-700';
+      case 'talent_pool': return 'bg-purple-100 text-purple-700';
       case 'pending': return 'bg-amber-100 text-amber-700';
       case 'rejected': return 'bg-red-100 text-red-700';
       default: return 'bg-slate-100 text-slate-700';
@@ -302,19 +344,21 @@ const CandidateDetail: React.FC = () => {
           </div>
           <button
             onClick={runWorkflowHandler}
-            disabled={runningWorkflow}
+            disabled={runningWorkflow || !!workflowWaiting}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all shadow-sm disabled:opacity-50"
           >
             {runningWorkflow ? <Loader2 className="animate-spin" size={16} /> : <Play size={16} />}
-            {runningWorkflow ? '分析中...' : '启动AI评估'}
+            {runningWorkflow ? '分析中...' : workflowWaiting ? '流程进行中' : '启动AI评估'}
           </button>
         </div>
       </div>
 
-      {runningWorkflow && (
+      {(runningWorkflow || workflowWaiting) && (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-slate-700">AI评估进度</span>
+            <span className="text-sm font-medium text-slate-700">
+              {workflowWaiting ? '招聘流程进行中（等待人工环节）' : 'AI评估进度'}
+            </span>
             <span className="text-sm text-blue-600 font-medium">{workflowProgress}%</span>
           </div>
           <div className="w-full bg-slate-100 rounded-full h-2">
@@ -323,6 +367,18 @@ const CandidateDetail: React.FC = () => {
               style={{ width: `${workflowProgress}%` }}
             ></div>
           </div>
+          {workflowWaiting && (
+            <div className="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <Clock className="text-amber-600 mt-0.5 shrink-0" size={18} />
+              <div>
+                <p className="text-sm font-medium text-amber-800">流程挂起，等待人工处理</p>
+                <p className="text-xs text-amber-700 mt-1">{workflowWaiting.message}</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  人工环节完成后系统自动推进，无需重新启动评估
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -552,22 +608,39 @@ const CandidateDetail: React.FC = () => {
                   const tagBg = isCompleted ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700';
                   const tagText = isCompleted ? '已通过' : '待面试';
                   return (
-                    <div key={iv.id} className="flex items-center gap-2 p-4 bg-slate-50 rounded-lg">
-                      <div className={`w-10 h-10 ${iconBg} rounded-full flex items-center justify-center`}>
-                        <Icon className={iconColor} size={18} />
+                    <div key={iv.id} className="p-4 bg-slate-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-10 h-10 ${iconBg} rounded-full flex items-center justify-center`}>
+                          <Icon className={iconColor} size={18} />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-slate-800">第{iv.round}轮面试 - {iv.position}</p>
+                          <p className="text-sm text-slate-500">
+                            {iv.scheduled_at ? new Date(iv.scheduled_at).toLocaleString('zh-CN') : '时间未定'} ·
+                            面试官ID: {iv.interviewer_id || '待定'}
+                            {iv.score ? ` · 分数: ${iv.score}` : ''}
+                          </p>
+                        </div>
+                        <span className={`px-2.5 py-1 ${tagBg} rounded-full text-xs font-medium`}>{tagText}</span>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-slate-800">第{iv.round}轮面试 - {iv.position}</p>
-                        <p className="text-sm text-slate-500">
-                          {iv.scheduled_at ? new Date(iv.scheduled_at).toLocaleString('zh-CN') : '时间未定'} ·
-                          面试官ID: {iv.interviewer_id || '待定'}
-                          {iv.score ? ` · 分数: ${iv.score}` : ''}
-                        </p>
-                        {iv.feedback && (
-                          <p className="text-xs text-slate-500 mt-1">反馈: {iv.feedback}</p>
-                        )}
-                      </div>
-                      <span className={`px-2.5 py-1 ${tagBg} rounded-full text-xs font-medium`}>{tagText}</span>
+                      {iv.feedback && (
+                        <p className="text-xs text-slate-500 mt-2">反馈: {iv.feedback}</p>
+                      )}
+                      {iv.questions && iv.questions.length > 0 && (
+                        <details className="mt-3 group">
+                          <summary className="text-xs text-blue-600 cursor-pointer select-none hover:text-blue-700">
+                            AI 面试题（{iv.questions.length} 题，点击展开）
+                          </summary>
+                          <ol className="mt-2 space-y-2 pl-1">
+                            {iv.questions.map((q, i) => (
+                              <li key={i} className="text-xs">
+                                <span className="font-medium text-slate-700">{i + 1}. {q.question}</span>
+                                {q.focus && <span className="block text-slate-400 mt-0.5 ml-4">考察要点：{q.focus}</span>}
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
+                      )}
                     </div>
                   );
                 })
@@ -586,7 +659,7 @@ const CandidateDetail: React.FC = () => {
                       <h4 className="font-medium text-slate-800">{ev.dimension}</h4>
                       <span className="text-lg font-bold text-blue-600">{ev.score}分</span>
                     </div>
-                    <p className="text-sm text-slate-500">评估人ID: {ev.evaluator_id} · {new Date(ev.created_at).toLocaleDateString('zh-CN')}</p>
+                    <p className="text-sm text-slate-500">{ev.evaluator_id ? `评估人ID: ${ev.evaluator_id}` : 'AI 自动评估'} · {new Date(ev.created_at).toLocaleDateString('zh-CN')}</p>
                     {ev.comment && (
                       <p className="text-sm text-slate-600 mt-2">{ev.comment}</p>
                     )}
@@ -644,6 +717,20 @@ const CandidateDetail: React.FC = () => {
                     </div>
                   )}
                 </>
+              ) : workflowWaiting ? (
+                <div className="text-center py-12">
+                  <Clock className="mx-auto text-amber-500 mb-3" size={32} />
+                  <p className="text-slate-700 font-medium">流程挂起，等待人工环节</p>
+                  <p className="text-sm text-slate-500 mt-2 max-w-md mx-auto">{workflowWaiting.message}</p>
+                  <div className="w-full max-w-xs mx-auto mt-4 bg-slate-100 rounded-full h-2">
+                    <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${workflowWaiting.progress}%` }}></div>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-3">
+                    {workflowWaiting.wait_type === 'await_questionnaire'
+                      ? '在「智能问卷」中提交作答后自动推进'
+                      : '在「面试管理」中录入面试结果后自动推进'}
+                  </p>
+                </div>
               ) : (
                 <div className="text-center py-12">
                   <Play className="mx-auto text-slate-400 mb-3" size={32} />

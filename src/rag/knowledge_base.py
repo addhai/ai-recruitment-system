@@ -1,4 +1,17 @@
+"""人事制度知识库：BM25 + 向量 Ensemble 混合检索 + LLM 生成回答。
+
+设计要点：
+1. embedding 与 chat LLM 配置分离（DeepSeek 无 embedding 接口，默认走硅基流动 bge-large-zh）；
+2. embedding/LLM 任一不可用都降级：BM25 关键词检索 + 模板答案，功能不中断；
+3. 向量库维度随 embedding 模型变化，检测到旧维度数据自动重建，避免维度冲突报错；
+4. 用户通过 add_document 添加的文档同时进入向量库和 BM25 索引（修复旧版重建丢文档问题）；
+5. 查询入口提供 async 版本，FastAPI 路由通过线程池调用，不阻塞事件循环。
+"""
+import asyncio
+import os
+import shutil
 from typing import List, Dict, Any, Optional
+
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 try:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -9,44 +22,30 @@ try:
 except ImportError:
     from langchain_chroma import Chroma
 from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+# 注意：langchain 1.x 已移除 EnsembleRetriever，langchain-community 也在 sunset。
+# 这里只取 BM25Retriever（关键词检索），向量+关键词的混合合并在本模块内自行实现，避免版本碎片。
 try:
-    from langchain_community.retrievers import BM25Retriever, EnsembleRetriever
+    from langchain_community.retrievers import BM25Retriever
 except ImportError:
-    try:
-        from langchain.retrievers import BM25Retriever, EnsembleRetriever
-    except ImportError:
-        BM25Retriever = None
-        EnsembleRetriever = None
-import os
+    BM25Retriever = None
+try:
+    import jieba
+except ImportError:
+    jieba = None
+
+
+def _tokenize(text: str) -> List[str]:
+    """中文分词：jieba 优先；缺失时退化为字符 bi-gram，保证 BM25 不因整句成词而失效"""
+    if jieba is not None:
+        return [t for t in jieba.lcut(text) if t.strip()]
+    chars = [c for c in text if c.strip()]
+    return ["".join(chars[i:i + 2]) for i in range(len(chars) - 1)] or chars
+
 from src.config import settings
 
-llm = None
-embeddings = None
-
-if settings.LLM_API_KEY:
-    try:
-        llm = ChatOpenAI(
-            model=settings.LLM_MODEL,
-            temperature=0.3,
-            api_key=settings.LLM_API_KEY,
-            base_url=settings.LLM_API_BASE
-        )
-        embeddings = OpenAIEmbeddings(
-            model="text-embedding-3-small",
-            api_key=settings.LLM_API_KEY,
-            base_url=settings.LLM_API_BASE
-        )
-    except Exception as e:
-        print(f"[knowledge_base] LLM 初始化失败: {e}")
-        llm = None
-        embeddings = None
-
-vector_store: Optional[Chroma] = None
-bm25_retriever: Optional[BM25Retriever] = None
-ensemble_retriever: Optional[EnsembleRetriever] = None
-qa_chain: Optional[Any] = None
+PERSIST_DIR = os.path.join(os.path.dirname(__file__), "../data/chroma")
+COLLECTION_NAME = "hr_knowledge"
 
 system_documents = [
     {
@@ -225,45 +224,130 @@ system_documents = [
     }
 ]
 
+# 用户通过 API 添加的自定义文档（内存保留；向量库持久化到 Chroma）
+_extra_documents: List[Dict[str, str]] = []
 
-def init_knowledge_base():
-    global vector_store, bm25_retriever, ensemble_retriever, qa_chain
-    
-    texts = [doc["content"] for doc in system_documents]
-    metadatas = [{"title": doc["title"]} for doc in system_documents]
-    
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
-        length_function=len
+_vector_store: Optional[Chroma] = None
+_bm25_retriever = None
+_qa_chain: Optional[Any] = None
+_chat_llm: Optional[ChatOpenAI] = None
+_init_attempted = False
+
+
+def _build_embeddings() -> Optional[OpenAIEmbeddings]:
+    """构建 embedding 客户端；无 key 时返回 None（调用方降级为纯 BM25）"""
+    if not settings.embedding_api_key:
+        return None
+    return OpenAIEmbeddings(
+        model=settings.EMBEDDING_MODEL,
+        api_key=settings.embedding_api_key,
+        base_url=settings.EMBEDDING_API_BASE,
+        check_embedding_ctx_length=False,
     )
-    split_docs = text_splitter.create_documents(texts, metadatas=metadatas)
-    
-    persist_dir = os.path.join(os.path.dirname(__file__), "../data/chroma")
-    os.makedirs(persist_dir, exist_ok=True)
-    
-    vector_store = Chroma.from_documents(
-        documents=split_docs,
-        embedding=embeddings,
-        persist_directory=persist_dir
+
+
+def _build_chat_llm() -> Optional[ChatOpenAI]:
+    if not settings.LLM_API_KEY:
+        return None
+    return ChatOpenAI(
+        model=settings.LLM_MODEL,
+        temperature=0.3,
+        timeout=45,
+        max_retries=2,
+        api_key=settings.LLM_API_KEY,
+        base_url=settings.LLM_API_BASE,
     )
-    
-    if BM25Retriever and EnsembleRetriever:
-        bm25_retriever = BM25Retriever.from_documents(split_docs)
-        bm25_retriever.k = 3
-        
-        vector_retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-        
-        ensemble_retriever = EnsembleRetriever(
-            retrievers=[bm25_retriever, vector_retriever],
-            weights=[0.3, 0.7]
-        )
+
+
+def _all_documents() -> List[Dict[str, str]]:
+    return system_documents + _extra_documents
+
+
+def _split_docs():
+    docs = _all_documents()
+    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, length_function=len)
+    return splitter.create_documents(
+        [d["content"] for d in docs],
+        metadatas=[{"title": d["title"], "source": "system" if d in system_documents else "custom"} for d in docs],
+    )
+
+
+def _reset_vector_dir():
+    """维度不匹配等场景下清空旧向量库目录"""
+    if os.path.isdir(PERSIST_DIR):
+        shutil.rmtree(PERSIST_DIR, ignore_errors=True)
+    os.makedirs(PERSIST_DIR, exist_ok=True)
+
+
+def init_knowledge_base(force: bool = False) -> bool:
+    """初始化检索链。返回向量检索是否可用（False 表示降级为 BM25/模板）。
+
+    force=True 时强制重建（添加自定义文档后调用）。
+    """
+    global _vector_store, _bm25_retriever, _qa_chain, _chat_llm, _init_attempted
+    if _init_attempted and not force:
+        return _vector_store is not None
+    _init_attempted = True
+
+    _chat_llm = _build_chat_llm()
+    embeddings = _build_embeddings()
+    split_docs = _split_docs()
+
+    # ---- 向量库：旧维度数据自动重建；force 时全量重建（保证自定义文档进入且无重复）----
+    if embeddings is not None:
+        os.makedirs(PERSIST_DIR, exist_ok=True)
+        try:
+            if force:
+                try:
+                    Chroma(collection_name=COLLECTION_NAME, embedding_function=embeddings,
+                           persist_directory=PERSIST_DIR).delete_collection()
+                except Exception:
+                    _reset_vector_dir()
+                _vector_store = Chroma.from_documents(
+                    documents=split_docs, embedding=embeddings,
+                    collection_name=COLLECTION_NAME, persist_directory=PERSIST_DIR,
+                )
+            else:
+                _vector_store = Chroma(
+                    collection_name=COLLECTION_NAME,
+                    embedding_function=embeddings,
+                    persist_directory=PERSIST_DIR,
+                )
+                try:
+                    if _vector_store._collection.count() > 0:
+                        # 探测：旧库维度与当前 embedding 模型不一致时查询会报错
+                        _vector_store.similarity_search("探测", k=1)
+                    else:
+                        _vector_store.add_documents(split_docs)
+                except Exception:
+                    print("[knowledge_base] 向量库维度不匹配或数据损坏，重建索引...")
+                    try:
+                        _vector_store.delete_collection()
+                    except Exception:
+                        _reset_vector_dir()
+                    _vector_store = Chroma.from_documents(
+                        documents=split_docs, embedding=embeddings,
+                        collection_name=COLLECTION_NAME, persist_directory=PERSIST_DIR,
+                    )
+        except Exception as e:
+            print(f"[knowledge_base] 向量库初始化失败，降级为 BM25 检索: {type(e).__name__}: {str(e)[:200]}")
+            _vector_store = None
     else:
-        bm25_retriever = None
-        ensemble_retriever = vector_store.as_retriever(search_kwargs={"k": 3})
-    
-    prompt = PromptTemplate(
-        template="""你是企业人事制度知识库助手，请根据提供的上下文信息回答问题。
+        _vector_store = None
+
+    # ---- BM25 关键词检索（内存，始终包含系统+自定义文档）----
+    if BM25Retriever is not None:
+        try:
+            _bm25_retriever = BM25Retriever.from_documents(split_docs, preprocess_func=_tokenize)
+            _bm25_retriever.k = 4
+        except Exception as e:
+            print(f"[knowledge_base] BM25 初始化失败: {type(e).__name__}: {e}")
+            _bm25_retriever = None
+
+    # ---- LLM 问答链（context 由 _retrieve_docs 混合检索后注入；无 chat LLM 时走模板兜底）----
+    if _chat_llm is not None and (_bm25_retriever is not None or _vector_store is not None):
+        prompt = PromptTemplate(
+            template="""你是企业人事制度知识库助手，请严格根据提供的上下文信息回答问题。
 
 上下文信息：
 {context}
@@ -271,26 +355,62 @@ def init_knowledge_base():
 问题：
 {question}
 
-请给出准确、简洁的回答。如果上下文信息不足，请说明无法回答。""",
-        input_variables=["context", "question"]
-    )
-    
-    retriever = ensemble_retriever or vector_store.as_retriever(search_kwargs={"k": 3})
-    
-    def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
-    
-    qa_chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
+要求：
+1. 只依据上下文回答，上下文没有的内容明确说"知识库中暂无相关规定"，禁止编造；
+2. 回答准确、简洁，涉及数字（天数、比例、日期）必须与上下文一致；
+3. 用中文回答。""",
+            input_variables=["context", "question"]
+        )
+        _qa_chain = prompt | _chat_llm | StrOutputParser()
+    else:
+        _qa_chain = None
+
+    if _vector_store is not None:
+        print("[knowledge_base] 检索模式：向量 + BM25 混合检索")
+    elif _bm25_retriever is not None:
+        print("[knowledge_base] 检索模式：BM25 关键词检索（embedding 未配置或不可用）")
+    else:
+        print("[knowledge_base] 检索模式：仅规则模板（检索器均不可用）")
+
+    return _vector_store is not None
+
+
+def _doc_key(doc) -> str:
+    return f"{doc.metadata.get('title', '')}|{doc.page_content[:60]}"
+
+
+def _retrieve_docs(query: str, k: int = 4) -> List[Any]:
+    """混合检索：BM25 关键词命中在前（精确匹配权重高），向量语义结果补充，按内容去重。"""
+    merged: List[Any] = []
+    seen = set()
+
+    def _add(docs):
+        for d in docs:
+            key = _doc_key(d)
+            if key not in seen:
+                seen.add(key)
+                merged.append(d)
+
+    if _bm25_retriever is not None:
+        try:
+            _add(_bm25_retriever.invoke(query))
+        except Exception as e:
+            print(f"[knowledge_base] BM25 检索异常: {type(e).__name__}: {str(e)[:100]}")
+    if _vector_store is not None:
+        try:
+            _add(_vector_store.similarity_search(query, k=k))
+        except Exception as e:
+            print(f"[knowledge_base] 向量检索异常: {type(e).__name__}: {str(e)[:100]}")
+    return merged[:k]
+
+
+def _format_docs(docs: List[Any]) -> str:
+    return "\n\n".join(f"【{d.metadata.get('title', '未知')}】\n{d.page_content}" for d in docs)
 
 
 def keyword_search(query: str, top_k: int = 3) -> List[Dict[str, Any]]:
     query_lower = query.lower()
-    
+
     keywords = []
     if " " in query_lower:
         keywords = [k for k in query_lower.split() if len(k) > 0]
@@ -301,9 +421,9 @@ def keyword_search(query: str, top_k: int = 3) -> List[Dict[str, Any]]:
                         "KPI", "评级", "调薪", "入职流程", "新员工", "报到"]:
             if keyword in query_lower and keyword not in keywords:
                 keywords.append(keyword)
-    
+
     scores = []
-    for idx, doc in enumerate(system_documents):
+    for idx, doc in enumerate(_all_documents()):
         title_score = 0
         content_score = 0
         for keyword in keywords:
@@ -317,7 +437,7 @@ def keyword_search(query: str, top_k: int = 3) -> List[Dict[str, Any]]:
     scores.sort(key=lambda x: x[1], reverse=True)
     results = []
     for idx, _ in scores[:top_k]:
-        doc = system_documents[idx]
+        doc = _all_documents()[idx]
         results.append({
             "title": doc["title"],
             "content": doc["content"][:300],
@@ -332,99 +452,81 @@ def fallback_answer(query: str) -> Dict[str, Any]:
     if not results:
         return {
             "answer": "抱歉，我暂时无法回答您的问题。您可以尝试询问以下话题：\n- 员工入职流程\n- 年假/福利制度\n- 绩效考核\n- 试用期规定\n- 薪酬管理",
-            "sources": []
+            "sources": [],
+            "mode": "fallback"
         }
-    
+
     context = "\n\n".join([f"【{r['title']}】\n{r['content']}" for r in results])
     answer_parts = []
-    
+
     if any(k in query for k in ["入职", "新员工", "报到"]):
-        answer_parts.append("员工入职流程主要包括以下几个步骤：\n\n1. **入职前准备**：HR发送录用通知书，收集入职材料（身份证复印件、学历证明、离职证明等），安排办公座位和设备，创建员工邮箱和账号。\n\n2. **入职当天**：\n   - 9:00-9:30 报到登记，领取工牌\n   - 9:30-10:30 HR入职培训（公司制度、企业文化）\n   - 10:30-11:30 IT部门设备配置\n   - 11:30-12:00 部门负责人接待\n   - 14:00-17:00 部门内部培训\n\n3. **试用期**：1-3个月，根据岗位性质确定。")
+        answer_parts.append("员工入职流程主要包括以下几个步骤：\n\n1. **入职前准备**：HR发送录用通知书，收集入职材料（身份证复印件、学历证明、离职证明等），安排办公座位和设备，创建员工邮箱和账号。\n\n2. **入职当天**：\n   - 9:00-9:30 报到登记，领取工牌\n   - 9:30-10:30 HR入职培训（公司制度、企业文化）\n   - 10:30-11:30 IT部门设备配置（电脑、软件安装）\n   - 11:30-12:00 部门负责人接待\n   - 14:00-17:00 部门内部培训\n\n3. **试用期**：1-3个月，根据岗位性质确定。")
     elif any(k in query for k in ["年假", "休假", "福利", "病假", "婚假", "产假"]):
         answer_parts.append("关于带薪休假的规定如下：\n\n- **年假**：入职满1年享受5天，每增加1年增加1天，最多15天\n- **病假**：每年15天带薪病假\n- **婚假**：3天，晚婚额外增加7天\n- **产假**：98天，符合条件可延长\n\n此外还有年度体检、餐补、交通补贴等福利。")
     elif any(k in query for k in ["绩效", "考核", "评级", "KPI"]):
-        answer_parts.append("绩效考核制度如下：\n\n**考核周期**：\n- 月度考核：每月进行一次\n- 季度考核：每季度进行一次\n- 年度考核：每年进行一次\n\n**考核维度**：\n- 工作业绩（40%）\n- 工作态度（20%）\n- 团队协作（20%）\n- 创新能力（10%）\n- 职业素养（10%）\n\n**考核等级**：S级（卓越）、A级（优秀）、B级（良好）、C级（合格）、D级（不合格）")
+        answer_parts.append("绩效考核制度如下：\n\n**考核周期**：\n- 月度考核：每月进行一次\n- 季度考核：每季度进行一次\n- 年度考核：每年进行一次\n\n**考核维度**：\n- 工作业绩（40%）、工作态度（20%）、团队协作（20%）、创新能力（10%）、职业素养（10%）\n\n**考核等级**：S级（卓越）、A级（优秀）、B级（良好）、C级（合格）、D级（不合格）")
     elif any(k in query for k in ["试用", "转正"]):
         answer_parts.append("试用期规定如下：\n\n- 试用期一般为1-3个月，根据岗位性质确定\n- 试用期工资为正式工资的80%\n- 试用期考核通过后转为正式员工\n- 入职前需完成体检\n- 需签订劳动合同和保密协议")
     elif any(k in query for k in ["薪酬", "工资", "薪资", "调薪"]):
-        answer_parts.append("薪酬管理制度：\n\n**薪酬构成**：\n- 基本工资：根据岗位等级确定\n- 绩效奖金：根据考核结果发放\n- 年终奖金：根据公司业绩和个人表现发放\n- 专项奖金：项目奖、创新奖等\n\n**薪资等级**：\n- 管理岗：M1-M8\n- 技术岗：T1-T8\n- 职能岗：F1-F6\n\n**发薪日期**：每月15日发放上月工资，遇节假日提前发放。")
+        answer_parts.append("薪酬管理制度：\n\n**薪酬构成**：基本工资、绩效奖金、年终奖金、专项奖金\n\n**薪资等级**：管理岗M1-M8、技术岗T1-T8、职能岗F1-F6\n\n**发薪日期**：每月15日发放上月工资，遇节假日提前发放。")
     elif any(k in query for k in ["培训", "学习", "发展"]):
-        answer_parts.append("员工培训制度：\n\n**培训类型**：\n- 新员工入职培训：为期1周，涵盖公司制度、文化、岗位技能\n- 在岗培训：由部门负责人或资深员工进行指导\n- 专项培训：针对特定技能或项目的培训\n- 外部培训：参加行业会议、培训课程等\n\n**培训费用**：公司承担培训费用，培训后需在公司服务满1年，否则需赔偿培训费用。")
+        answer_parts.append("员工培训制度：\n\n**培训类型**：新员工入职培训（1周）、在岗培训、专项培训、外部培训\n\n**培训费用**：公司承担，培训后需在公司服务满1年，否则需赔偿培训费用。")
     elif any(k in query for k in ["招聘", "面试", "录用"]):
-        answer_parts.append("招聘流程规范：\n\n1. **招聘需求提交**：用人部门提交招聘需求表，HR审核需求合理性\n2. **简历筛选**：HR初步筛选，用人部门技术筛选，AI辅助匹配\n3. **面试流程**：技术面试 → 综合面试 → HR面试\n4. **录用决策**：综合评估，确定薪资，发送录用通知书\n\n**招聘周期**：一般岗位2-4周，关键岗位4-8周。")
+        answer_parts.append("招聘流程规范：\n\n1. 用人部门提交招聘需求，HR审核\n2. 简历筛选：HR初筛 + 用人部门技术筛选 + AI辅助匹配\n3. 面试流程：技术面试 → 综合面试 → HR面试\n4. 录用决策：综合评估，确定薪资，发送录用通知书\n\n**招聘周期**：一般岗位2-4周，关键岗位4-8周。")
     else:
         answer_parts.append(f"根据知识库检索，以下文档可能与您的问题相关：\n\n{context}")
-    
+
     return {
         "answer": "\n\n".join(answer_parts),
-        "sources": [{"title": r["title"], "content": r["content"]} for r in results]
+        "sources": [{"title": r["title"], "content": r["content"]} for r in results],
+        "mode": "fallback"
     }
 
 
-def query_knowledge_base(query: str) -> Dict[str, Any]:
-    if not llm or not embeddings:
+def _query_sync(query: str) -> Dict[str, Any]:
+    vector_ok = init_knowledge_base()
+    if _qa_chain is None:
         return fallback_answer(query)
-    
-    if not qa_chain:
-        try:
-            init_knowledge_base()
-        except Exception as e:
-            print(f"[knowledge_base] 初始化失败，使用fallback: {e}")
-            return fallback_answer(query)
-    
+
     try:
-        answer = qa_chain.invoke(query)
-        
-        retriever = ensemble_retriever or vector_store.as_retriever(search_kwargs={"k": 3})
-        source_docs = retriever.invoke(query)
-        
-        sources = []
-        for doc in source_docs:
-            sources.append({
-                "title": doc.metadata.get("title", "未知"),
-                "content": doc.page_content[:200]
-            })
-        
+        docs = _retrieve_docs(query)
+        if not docs:
+            # 检索器都没命中：交模板兜底，避免 LLM 无依据编造
+            return fallback_answer(query)
+        answer = _qa_chain.invoke({"context": _format_docs(docs), "question": query})
+        sources = [
+            {"title": doc.metadata.get("title", "未知"), "content": doc.page_content[:200]}
+            for doc in docs
+        ]
         return {
             "answer": answer if isinstance(answer, str) else str(answer),
-            "sources": sources
+            "sources": sources,
+            "mode": "hybrid_rag" if vector_ok else "bm25_llm",
         }
     except Exception as e:
-        print(f"[knowledge_base] 查询失败，使用fallback: {e}")
+        print(f"[knowledge_base] RAG 查询失败，降级模板回答: {type(e).__name__}: {str(e)[:200]}")
         return fallback_answer(query)
 
 
-def add_document(title: str, content: str):
-    global vector_store, bm25_retriever, ensemble_retriever, qa_chain
-    
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=50,
-        length_function=len
-    )
-    
-    split_docs = text_splitter.create_documents([content], metadatas=[{"title": title}])
-    
-    if vector_store:
-        vector_store.add_documents(split_docs)
-    else:
-        persist_dir = os.path.join(os.path.dirname(__file__), "../data/chroma")
-        vector_store = Chroma.from_documents(
-            documents=split_docs,
-            embedding=embeddings,
-            persist_directory=persist_dir
-        )
-    
-    bm25_retriever = None
-    ensemble_retriever = None
-    qa_chain = None
-    
-    init_knowledge_base()
+async def query_knowledge_base_async(query: str) -> Dict[str, Any]:
+    """异步入口：线程池执行检索+LLM，避免阻塞 FastAPI 事件循环"""
+    return await asyncio.to_thread(_query_sync, query)
+
+
+def query_knowledge_base(query: str) -> Dict[str, Any]:
+    """同步入口（测试/脚本使用）"""
+    return _query_sync(query)
+
+
+def add_document(title: str, content: str) -> None:
+    """添加自定义文档：同时进入向量库与 BM25 索引，并持久化到 Chroma"""
+    _extra_documents.append({"title": title, "content": content})
+    # 强制重建：split_docs 已包含新文档，BM25 全量重建，向量库增量写入
+    init_knowledge_base(force=True)
 
 
 def get_all_documents() -> List[Dict[str, str]]:
-    return system_documents
+    return _all_documents()
 
 
-# 模块加载时不自动初始化（避免无 LLM 配置时启动失败）
-# 首次查询时通过 query_knowledge_base 内的 init_knowledge_base() 延迟初始化
+# 模块加载时不自动初始化（避免无配置时启动失败）；首次查询时延迟初始化
