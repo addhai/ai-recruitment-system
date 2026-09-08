@@ -55,11 +55,6 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
 
-    # 飞书集成
-    FEISHU_APP_ID: Optional[str] = None
-    FEISHU_APP_SECRET: Optional[str] = None
-    FEISHU_WEBHOOK_URL: Optional[str] = None  # 机器人webhook
-
     # 简历上传后是否自动启动 AI 工作流（自动化中台开关，关闭后需手动点"启动AI评估"）
     AUTO_START_WORKFLOW: bool = True
 

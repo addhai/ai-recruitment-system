@@ -21,10 +21,6 @@ from langchain_core.output_parsers import JsonOutputParser
 from src.config import settings
 from src.workflow import db_actions as db
 from src.sse import notification as sse
-from src.services.feishu_notify import (
-    notify_workflow_completed_async,
-    notify_interview_scheduled_async,
-)
 
 _llm_instance: Optional[ChatOpenAI] = None
 
@@ -500,15 +496,6 @@ def make_interview_node(round_no: int, progress_schedule: int, progress_done: in
                 # 首次排期才发送通知，避免 resume 重放重复推送
                 scheduled_str = info.get("scheduled_at") or "待定"
                 await sse.notify_interview_scheduled(cid, interview_id, round_no, scheduled_str)
-                try:
-                    await notify_interview_scheduled_async(
-                        state.get("candidate_name", f"候选人#{cid}"),
-                        state.get("position") or "",
-                        scheduled_str,
-                        "系统自动分配",
-                    )
-                except Exception as e:
-                    print(f"[workflow] 飞书面试通知失败: {e}")
 
             # ---- 挂起：等待 HR 录入真实面试结果 ----
             result = interrupt({
@@ -630,15 +617,6 @@ async def _finish(cid: int, status: str, tags: List[str], notes: str,
     db.set_candidate_status(cid, status)
     db.upsert_talent_pool(cid, tags, notes)
     await sse.notify_hiring_decision(cid, decision, overall)
-    try:
-        await notify_workflow_completed_async(
-            state.get("candidate_name", f"候选人#{cid}"),
-            state.get("position") or "",
-            decision,
-            overall,
-        )
-    except Exception as e:
-        print(f"[workflow] 飞书完成通知失败: {e}")
     return {**state, "workflow_progress": 100, "current_step": progress_step}
 
 

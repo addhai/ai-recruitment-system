@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Shield, Bell, Palette, Plus, X, Check, Edit2, Trash2, MessageSquare } from 'lucide-react';
+import { Users, Shield, Bell, Palette, Plus, X, Check, Edit2, Trash2 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import type { SkinPreset } from '../context/ThemeContext';
 import { getCurrentUser } from '../services/auth';
@@ -48,25 +48,6 @@ const Settings: React.FC = () => {
     { id: 'evaluation_complete', title: '评估完成通知', desc: '评估完成时通知', enabled: true },
     { id: 'system_message', title: '系统消息', desc: '系统公告和更新通知', enabled: false },
   ]);
-  // 飞书集成配置（前端仅作展示与本地记录，实际配置在后端 .env 文件中）
-  const [feishuConfig, setFeishuConfig] = useState({
-    appId: '',
-    appSecret: '',
-    webhookUrl: '',
-  });
-  const [feishuSaved, setFeishuSaved] = useState(false);
-
-  useEffect(() => {
-    // 从 localStorage 读取飞书配置缓存
-    const stored = localStorage.getItem('feishu_config');
-    if (stored) {
-      try {
-        setFeishuConfig(JSON.parse(stored));
-      } catch {
-        // 忽略解析错误
-      }
-    }
-  }, []);
 
   useEffect(() => {
     // 拉取当前登录用户（后端 /auth/users/me）
@@ -79,7 +60,6 @@ const Settings: React.FC = () => {
     { id: 'users', label: '用户管理', icon: Users },
     { id: 'roles', label: '角色权限', icon: Shield },
     { id: 'notifications', label: '通知设置', icon: Bell },
-    { id: 'feishu', label: '飞书集成', icon: MessageSquare },
     { id: 'appearance', label: '外观设置', icon: Palette },
   ];
 
@@ -331,75 +311,6 @@ const Settings: React.FC = () => {
                       </button>
                     </div>
                   ))}
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'feishu' && (
-              <div>
-                <h3 className="text-lg font-semibold text-slate-800 mb-2">飞书集成</h3>
-                <p className="text-sm text-slate-500 mb-6">
-                  配置飞书机器人 Webhook 后，系统将在面试安排、AI 评估完成等关键节点自动推送消息到飞书群。
-                  实际生效配置在后端 <code className="text-xs bg-slate-100 px-1 py-0.5 rounded">.env</code> 文件中（FEISHU_APP_ID / FEISHU_APP_SECRET / FEISHU_WEBHOOK_URL）。
-                </p>
-                <div className="space-y-4 max-w-xl">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">飞书 App ID</label>
-                    <input
-                      type="text"
-                      value={feishuConfig.appId}
-                      onChange={(e) => setFeishuConfig({ ...feishuConfig, appId: e.target.value })}
-                      placeholder="cli_xxxxxxxx"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">飞书 App Secret</label>
-                    <input
-                      type="password"
-                      value={feishuConfig.appSecret}
-                      onChange={(e) => setFeishuConfig({ ...feishuConfig, appSecret: e.target.value })}
-                      placeholder="••••••••••••"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">机器人 Webhook URL</label>
-                    <input
-                      type="text"
-                      value={feishuConfig.webhookUrl}
-                      onChange={(e) => setFeishuConfig({ ...feishuConfig, webhookUrl: e.target.value })}
-                      placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxx"
-                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-xs text-slate-400 mt-1">
-                      在飞书群「设置 → 群机器人 → 添加机器人 → 自定义机器人」中获取
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={() => {
-                        localStorage.setItem('feishu_config', JSON.stringify(feishuConfig));
-                        setFeishuSaved(true);
-                        setTimeout(() => setFeishuSaved(false), 2000);
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                    >
-                      保存到本地
-                    </button>
-                    {feishuSaved && (
-                      <span className="text-sm text-green-600 flex items-center gap-1">
-                        <Check size={16} /> 已保存（请同步配置到后端 .env）
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                    <p className="text-xs text-amber-700">
-                      ⚠️ 前端保存的配置仅用于本地参考。要让通知真正生效，请将以上配置写入后端的
-                      <code className="text-xs bg-amber-100 px-1 py-0.5 rounded mx-1">.env</code>
-                      文件并重启服务。
-                    </p>
-                  </div>
                 </div>
               </div>
             )}

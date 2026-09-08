@@ -2,14 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
-from src.models.database import get_db, Interview, Candidate, User
+from src.models.database import get_db, Interview
 from src.models.schemas import InterviewCreate, InterviewUpdate, InterviewResponse
 from src.api.auth import get_current_user
 from src.sse.notification import (
     notify_interview_scheduled as notify_sse_interview_scheduled,
     notify_interview_completed as notify_sse_interview_completed,
 )
-from src.services.feishu_notify import notify_interview_scheduled_async
 from src.safety import InputGuard
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
@@ -73,14 +72,6 @@ async def create_interview(interview: InterviewCreate, db: Session = Depends(get
     db.commit()
     db.refresh(new_interview)
 
-    # 查询候选人和面试官信息，用于通知
-    candidate = db.query(Candidate).filter(Candidate.id == interview.candidate_id).first()
-    interviewer = None
-    if interview.interviewer_id:
-        interviewer = db.query(User).filter(User.id == interview.interviewer_id).first()
-
-    candidate_name = candidate.name if candidate else f"候选人#{interview.candidate_id}"
-    interviewer_name = interviewer.full_name if interviewer else "待定"
     scheduled_time_str = interview.scheduled_at.strftime("%Y-%m-%d %H:%M") if interview.scheduled_at else "待定"
 
     # SSE 通知前端面试已安排
@@ -93,17 +84,6 @@ async def create_interview(interview: InterviewCreate, db: Session = Depends(get
         )
     except Exception:
         pass
-
-    # 飞书机器人通知
-    try:
-        await notify_interview_scheduled_async(
-            candidate_name,
-            interview.position,
-            scheduled_time_str,
-            interviewer_name,
-        )
-    except Exception as e:
-        print(f"[create_interview] 飞书通知失败: {e}")
 
     return new_interview
 
