@@ -251,6 +251,24 @@ def _ensure_columns():
                     print(f"[db] 迁移：{table} 新增列 {col_name}")
 
 
+class KnowledgeDocument(Base):
+    """知识库自定义文档。
+
+    此前自定义文档只存在内存列表 _extra_documents 中，重启即丢：
+    文档列表不显示、BM25 关键词检索丢失它们；若期间触发向量库维度重建，
+    还会从向量库里一并消失（因为重建用的 split_docs 已不含这些文档）。
+    此处落库持久化。
+    """
+    __tablename__ = "knowledge_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(200), nullable=False)
+    content = Column(Text, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class LLMCallLog(Base):
     """LLM 调用埋点：token 用量、耗时、成本、成功/降级状态。
 

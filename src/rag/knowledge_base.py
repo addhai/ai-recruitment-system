@@ -43,6 +43,9 @@ def _tokenize(text: str) -> List[str]:
     return ["".join(chars[i:i + 2]) for i in range(len(chars) - 1)] or chars
 
 from src.config import settings
+from src.logging_setup import get_logger
+
+logger = get_logger(__name__)
 
 PERSIST_DIR = os.path.join(os.path.dirname(__file__), "../data/chroma")
 COLLECTION_NAME = "hr_knowledge"
@@ -224,8 +227,9 @@ system_documents = [
     }
 ]
 
-# 用户通过 API 添加的自定义文档（内存保留；向量库持久化到 Chroma）
-_extra_documents: List[Dict[str, str]] = []
+# 用户通过 API 添加的自定义文档。**进程内缓存**，真实来源是 knowledge_documents 表
+# （此前只存内存，重启即丢，见 KnowledgeDocument 的说明）
+_extra_documents: List[Dict[str, Any]] = []
 
 _vector_store: Optional[Chroma] = None
 _bm25_retriever = None
@@ -273,9 +277,29 @@ def _split_docs():
 
 
 def _reset_vector_dir():
-    """维度不匹配等场景下清空旧向量库目录"""
+    """维度不匹配等场景下重建向量库目录。
+
+    原先直接删除整个目录，且只在 print 里留一行——
+    生产环境这是**静默数据销毁**：换 embedding 模型或误配一次维度，
+    知识库就没了。改为先重命名成带时间戳的备份目录并明确告警，
+    保留人工恢复的可能；只保留最近 2 份备份避免无限堆积。
+    """
+    from datetime import datetime as _dt
+    import glob as _glob
+
     if os.path.isdir(PERSIST_DIR):
-        shutil.rmtree(PERSIST_DIR, ignore_errors=True)
+        backup = f"{PERSIST_DIR}.bak-{_dt.now().strftime('%Y%m%d%H%M%S')}"
+        try:
+            os.rename(PERSIST_DIR, backup)
+            logger.warning(
+                "向量库维度不匹配，已重建索引；原目录备份在 %s（确认无误后可手动删除）",
+                backup)
+            # 只保留最近 2 份备份
+            for old in sorted(_glob.glob(f"{PERSIST_DIR}.bak-*"))[:-2]:
+                shutil.rmtree(old, ignore_errors=True)
+        except OSError as e:
+            logger.error("向量库目录备份失败(%s)，改为就地清空", e)
+            shutil.rmtree(PERSIST_DIR, ignore_errors=True)
     os.makedirs(PERSIST_DIR, exist_ok=True)
 
 
@@ -288,6 +312,9 @@ def init_knowledge_base(force: bool = False) -> bool:
     if _init_attempted and not force:
         return _vector_store is not None
     _init_attempted = True
+
+    # 先从数据库恢复自定义文档（重启后这是唯一来源）
+    _reload_custom_documents()
 
     _chat_llm = _build_chat_llm()
     embeddings = _build_embeddings()
@@ -580,11 +607,77 @@ def query_knowledge_base(query: str) -> Dict[str, Any]:
     return _query_sync(query)
 
 
-def add_document(title: str, content: str) -> None:
-    """添加自定义文档：同时进入向量库与 BM25 索引，并持久化到 Chroma"""
-    _extra_documents.append({"title": title, "content": content})
+def add_document(title: str, content: str, created_by: Optional[int] = None) -> int:
+    """添加自定义文档：落库 + 重建索引，返回文档 id。
+
+    必须落库——此前只 append 到内存列表，重启即丢（文档列表不显示、
+    BM25 检索丢失；若期间触发向量库维度重建还会永久消失）。
+    """
+    from src.models.database import SessionLocal, KnowledgeDocument, ensure_tables
+
+    ensure_tables()
+    db = SessionLocal()
+    try:
+        doc = KnowledgeDocument(title=title, content=content, created_by=created_by)
+        db.add(doc)
+        db.commit()
+        db.refresh(doc)
+        doc_id = doc.id
+    finally:
+        db.close()
+
+    _reload_custom_documents()
     # 强制重建：split_docs 已包含新文档，BM25 全量重建，向量库增量写入
     init_knowledge_base(force=True)
+    return doc_id
+
+
+def delete_document(doc_id: int) -> bool:
+    """删除自定义文档并重建索引。返回是否删除成功。"""
+    from src.models.database import SessionLocal, KnowledgeDocument, ensure_tables
+
+    ensure_tables()
+    db = SessionLocal()
+    try:
+        doc = db.query(KnowledgeDocument).filter(KnowledgeDocument.id == doc_id).first()
+        if not doc:
+            return False
+        db.delete(doc)
+        db.commit()
+    finally:
+        db.close()
+
+    _reload_custom_documents()
+    init_knowledge_base(force=True)
+    return True
+
+
+def list_custom_documents() -> List[Dict[str, Any]]:
+    """列出自定义文档（带 id，供前端删除操作使用）"""
+    _reload_custom_documents()
+    return list(_extra_documents)
+
+
+def _reload_custom_documents() -> None:
+    """从数据库重新加载自定义文档到内存缓存。
+
+    _extra_documents 只作为进程内缓存使用，真实来源是 knowledge_documents 表。
+    加载失败时保留现有缓存并告警，不让知识库整体不可用。
+    """
+    global _extra_documents
+    try:
+        from src.models.database import SessionLocal, KnowledgeDocument, ensure_tables
+        ensure_tables()
+        db = SessionLocal()
+        try:
+            rows = db.query(KnowledgeDocument).order_by(KnowledgeDocument.id).all()
+            _extra_documents = [
+                {"id": r.id, "title": r.title, "content": r.content} for r in rows
+            ]
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning("加载知识库自定义文档失败，沿用内存缓存: %s", str(e)[:200])
 
 
 def get_all_documents() -> List[Dict[str, str]]:
