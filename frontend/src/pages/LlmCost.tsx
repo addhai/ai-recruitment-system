@@ -136,6 +136,23 @@ const LlmCost: React.FC = () => {
             </div>
           </div>
 
+          {/* 跨币种金额绝不混算，但也不能让用户以为这就是全部花费 */}
+          {(t?.excluded_cost ?? 0) > 0 && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">
+              <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>
+                另有 <strong>{(t?.excluded_cost ?? 0).toFixed(4)}</strong> 的花费未计入上方合计：
+                {t?.foreign_currencies && t.foreign_currencies.length > 0 && (
+                  <>其它币种 {t.foreign_currencies.join(' / ')} 计 {(t?.foreign_cost ?? 0).toFixed(4)}；</>
+                )}
+                {(t?.unattributed_cost ?? 0) > 0 && (
+                  <>币种未知（多币种改造前的历史记录）计 {(t?.unattributed_cost ?? 0).toFixed(4)}。</>
+                )}
+                不同币种金额不可相加，故不并入合计。
+              </span>
+            </div>
+          )}
+
           {budget && (
             <div className="bg-white rounded-xl border border-slate-200 p-4 text-sm">
               <p className="text-slate-600">
@@ -181,7 +198,17 @@ const LlmCost: React.FC = () => {
                         <td className="px-3 py-2 text-right text-slate-500 text-xs">
                           {fmtNum(s.input_tokens)} / {fmtNum(s.output_tokens)}
                         </td>
-                        <td className="px-3 py-2 text-right">{fmtCost(s.cost, stats?.currency)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {fmtCost(s.cost, stats?.currency)}
+                          {s.excluded_cost > 0 && (
+                            <span
+                              className="ml-1 text-amber-600"
+                              title={`另有 ${s.excluded_cost.toFixed(4)} 未计入（其它币种或币种未知）`}
+                            >
+                              *
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 text-right text-slate-500">
                           {s.avg_latency_ms} ms
                         </td>
@@ -209,6 +236,7 @@ const LlmCost: React.FC = () => {
                     <tr>
                       <th className="text-left px-3 py-2 font-medium">时间</th>
                       <th className="text-left px-3 py-2 font-medium">环节</th>
+                      <th className="text-left px-3 py-2 font-medium">模型</th>
                       <th className="text-left px-3 py-2 font-medium">候选人</th>
                       <th className="text-right px-3 py-2 font-medium">Token</th>
                       <th className="text-right px-3 py-2 font-medium">成本</th>
@@ -223,6 +251,14 @@ const LlmCost: React.FC = () => {
                           {c.created_at?.slice(5, 19).replace('T', ' ')}
                         </td>
                         <td className="px-3 py-1.5 font-mono text-slate-700">{c.call_site}</td>
+                        <td className="px-3 py-1.5 text-slate-500 font-mono">
+                          {/* 显示供应商实际服务的版本：同一请求名可能被路由到不同底层版本，
+                              分数对不上时要能看出是不是换了版本 */}
+                          {c.model_served || c.model || '-'}
+                          {c.model_served && c.model && c.model_served !== c.model && (
+                            <span className="ml-1 text-slate-400">(请求 {c.model})</span>
+                          )}
+                        </td>
                         <td className="px-3 py-1.5 text-slate-500">{c.candidate_id ?? '-'}</td>
                         <td className="px-3 py-1.5 text-right text-slate-500">
                           {c.usage_missing ? '未知' : `${fmtNum(c.input_tokens)}/${fmtNum(c.output_tokens)}`}

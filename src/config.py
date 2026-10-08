@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     # 评分类任务要求低温度保证同分输入结果稳定可复现（可被数据库配置覆盖）
     LLM_TEMPERATURE: float = 0.1
     LLM_TIMEOUT_SECONDS: int = 45
+    # 同时在途的 LLM 调用数上限。批量筛简历时若把 N 个候选人并发跑起来，
+    # 每个候选人 4~8 次调用会瞬间放大成 N×8 个请求，很容易撞上供应商并发上限
+    # （DeepSeek 官方：deepseek-flash 2500 / deepseek-v4-pro 500）。
+    # 这里限的是**我们自己**的发散度，避免自造 429——重试虽能兜住，
+    # 但会把延迟拉长、把失败率推高。设为 0 表示不限。
+    LLM_MAX_CONCURRENCY: int = 8
 
     # 调用日志保留天数；init_db() 启动时按此清理过期的 llm_call_logs
     LLM_LOG_RETENTION_DAYS: int = 90

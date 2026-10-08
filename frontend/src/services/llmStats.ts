@@ -5,7 +5,10 @@ export interface LlmSiteStat {
   calls: number;
   input_tokens: number;
   output_tokens: number;
+  /** 当前计价币种下的花费 */
   cost: number;
+  /** 未计入 cost 的金额（其它币种 + 币种未知的历史行） */
+  excluded_cost: number;
   avg_latency_ms: number;
   max_latency_ms: number;
   failed: number;
@@ -34,8 +37,16 @@ export interface LlmStats {
     calls: number;
     input_tokens: number;
     output_tokens: number;
+    /** 只含 currency 对应的花费；跨币种金额绝不混算 */
     cost: number;
     avg_cost_per_call: number;
+    /** 已知的其它币种花费（未计入 cost） */
+    foreign_cost: number;
+    /** 币种未知的历史行花费（未计入 cost） */
+    unattributed_cost: number;
+    /** 上面两项之和，便于界面一句提示 */
+    excluded_cost: number;
+    foreign_currencies: string[];
     failed: number;
     degraded: number;
     failed_rate: number;
@@ -52,6 +63,8 @@ export interface LlmCallRow {
   call_site: string;
   candidate_id: number | null;
   model: string | null;
+  /** 供应商实际服务的模型版本（可能不同于请求名） */
+  model_served: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
   cost: number | null;

@@ -171,6 +171,50 @@ class TestBudget:
         assert "CNY" in msg
         assert "$" not in msg
 
+    def test_spent_in_window_excludes_foreign_currency(self, monkeypatch):
+        """窗口累加只认当前币种：跨币种金额相加会让上限形同虚设"""
+        from datetime import datetime
+        from src.models.database import SessionLocal, LLMCallLog
+
+        monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
+        try:
+            with SessionLocal() as db:
+                db.add(LLMCallLog(created_at=datetime.utcnow(),
+                                  call_site="fx_probe", model="m", cost=9.0,
+                                  currency="USD", latency_ms=1, status="ok",
+                                  degraded=False, usage_missing=False))
+                db.add(LLMCallLog(created_at=datetime.utcnow(),
+                                  call_site="fx_probe", model="m", cost=0.25,
+                                  currency="CNY", latency_ms=1, status="ok",
+                                  degraded=False, usage_missing=False))
+                db.commit()
+
+            asyncio.run(budget.reset_cache_for_test())
+            spent = asyncio.run(budget.spent_in_window())
+            # 9.0 USD 不能被算成 9.0 CNY
+            assert spent == pytest.approx(0.25)
+        finally:
+            with SessionLocal() as db:
+                db.query(LLMCallLog).filter(
+                    LLMCallLog.call_site == "fx_probe").delete()
+                db.commit()
+            asyncio.run(budget.reset_cache_for_test())
+
+    def test_add_spend_resets_accumulator_on_currency_change(self, monkeypatch):
+        """币种变了，旧的进程内累计值不能留（¥ 与 $ 不可相加）"""
+        monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
+        asyncio.run(budget.reset_cache_for_test())
+        asyncio.run(budget.add_spend(3.0))
+        assert budget._spent == pytest.approx(3.0)
+        assert budget._spent_currency == "CNY"
+
+        monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "USD")
+        asyncio.run(budget.add_spend(1.0))
+        assert budget._spent == pytest.approx(1.0)      # 3.0 CNY 已被丢弃
+        assert budget._spent_currency == "USD"
+        assert budget._never_read_db is True            # 强制下次回读
+        asyncio.run(budget.reset_cache_for_test())
+
 
 # ================================================================ 埋点落库
 class TestInvokeJsonInstrumentation:
@@ -283,11 +327,11 @@ class TestColdStartBudget:
         monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_REFRESH_EVERY", 20)
 
-        # 窗口内先有一笔超限成本
+        # 窗口内先有一笔超限成本（必须写 currency，成本聚合按币种过滤）
         with SessionLocal() as db:
             db.add(LLMCallLog(created_at=datetime.utcnow(), call_site="cold_start_seed",
                               model="m", input_tokens=1_000_000, output_tokens=0,
-                              cost=0.5, latency_ms=1, status="ok",
+                              cost=0.5, currency="CNY", latency_ms=1, status="ok",
                               degraded=False, usage_missing=False, prompt_hash="x" * 64))
             db.commit()
 

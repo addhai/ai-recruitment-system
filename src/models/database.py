@@ -237,7 +237,7 @@ def _ensure_columns():
         "interviews": [("questions", "JSON")],
         "candidates": [("job_description_id", "INTEGER")],
         "job_descriptions": [("position_id", "INTEGER")],
-        "llm_call_logs": [("currency", "VARCHAR(8)")],
+        "llm_call_logs": [("currency", "VARCHAR(8)"), ("model_served", "VARCHAR(64)")],
     }
     # 列重命名：cost_usd 在引入多币种后名不副实（DeepSeek 报价为人民币）
     renames = {
@@ -296,7 +296,11 @@ class LLMCallLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     call_site = Column(String(64), index=True)     # parse_resume / evaluate_skill_match / knowledge_qa …
     candidate_id = Column(Integer, index=True)     # 非候选人链路可空
-    model = Column(String(64))
+    model = Column(String(64))                    # 请求的模型名（配置里填的）
+    # 供应商实际提供服务的模型版本。DeepSeek 会按模型名路由到具体版本
+    # （如 deepseek-flash -> DeepSeek-V4.1-Flash），只记请求名会让
+    # "这个分数是哪一版模型打出来的"无从追溯——评分不可复现时这是关键线索。
+    model_served = Column(String(64))
     base_url = Column(String(128))
     input_tokens = Column(Integer)
     output_tokens = Column(Integer)

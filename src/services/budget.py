@@ -12,6 +12,7 @@
 """
 import asyncio
 from datetime import datetime, timedelta
+from typing import Optional
 
 from src.config import settings
 from src.logging_setup import get_logger
@@ -25,6 +26,8 @@ class BudgetExceeded(RuntimeError):
 
 # 进程内累加缓存：每次都 SUM 全表太重，按 N 次回读一次数据库
 _spent: float = 0.0
+# 累加值所属币种。币种一旦变化，旧累计值不能与新上限比较（¥ 与 $ 直接相加）
+_spent_currency: Optional[str] = None
 _calls_since_refresh: int = 0
 # 冷启动标记：首次检查必须先回读数据库，否则重启后保护完全失效
 _never_read_db: bool = True
@@ -72,9 +75,24 @@ def budget_limit() -> float:
 
 
 async def add_spend(cost: float) -> None:
-    """累计本次调用的成本（异步安全）。cost 的币种同 current_currency()。"""
-    global _spent, _calls_since_refresh
+    """累计本次调用的成本（异步安全）。cost 的币种同 current_currency()。
+
+    检测到计价币种变化时清空进程内累计并强制下次回读：
+    旧的累计值是另一种币种的金额，留着会与新上限混算。
+    """
+    global _spent, _spent_currency, _calls_since_refresh, _never_read_db
+    cur = current_currency()
     async with _lock:
+        if _spent_currency is not None and _spent_currency != cur:
+            logger.warning(
+                f"计价币种由 {_spent_currency} 变为 {cur}，"
+                "清空进程内累计并重新回读（跨币种金额不可相加）",
+                extra={"status": "budget_currency_changed",
+                       "from_currency": _spent_currency, "to_currency": cur})
+            _spent = 0.0
+            _calls_since_refresh = 0
+            _never_read_db = True
+        _spent_currency = cur
         _spent += cost or 0.0
         _calls_since_refresh += 1
 
@@ -87,6 +105,10 @@ async def spent_in_window() -> float:
     **冷启动必须回读**：服务重启后进程内计数为 0，若此时直接返回 0，
     就会在"今天已经花掉上限"的情况下完全放行——保护等同失效。
     因此首次调用（或距上次回读超过 N 次）都强制查库。
+
+    **只累加与当前计价币种一致的行**：上限是某个币种的金额，把其它币种的
+    花费加进来等于拿 ¥ 和 $ 直接相加。被排除且金额非 0 的行会告警——
+    静默排除会让预算少算，比不保护更危险（用户以为有保护，实际会超支）。
     """
     global _spent, _calls_since_refresh, _never_read_db
 
@@ -103,11 +125,15 @@ async def spent_in_window() -> float:
             base = _spent
         db = SessionLocal()
         try:
+            cur = current_currency()
+            window = LLMCallLog.created_at >= _window_start()
             persisted = (
                 db.query(func.coalesce(func.sum(LLMCallLog.cost), 0.0))
-                .filter(LLMCallLog.created_at >= _window_start())
+                .filter(window)
+                .filter(LLMCallLog.currency == cur)
                 .scalar()
             )
+            _warn_foreign_cost(db, window, cur)
             return float(persisted or 0.0) + base
         except Exception as e:
             logger.warning("回读预算失败，按进程内累计估算", extra={"error": str(e)[:200]})
@@ -116,6 +142,37 @@ async def spent_in_window() -> float:
             db.close()
 
     return _spent
+
+
+def _warn_foreign_cost(db, window, cur: str) -> None:
+    """窗口内存在非当前币种、且金额非 0 的花费时告警。
+
+    这类金额既不能加进当前币种的累计（口径不同），也不能当没发生——
+    否则预算保护会少算，用户以为有上限实际会超支。
+    """
+    from src.models.database import LLMCallLog
+    from sqlalchemy import func
+    try:
+        rows = (
+            db.query(LLMCallLog.currency,
+                     func.coalesce(func.sum(LLMCallLog.cost), 0.0))
+            .filter(window)
+            .filter(LLMCallLog.cost > 0)
+            .filter((LLMCallLog.currency != cur) | (LLMCallLog.currency.is_(None)))
+            .group_by(LLMCallLog.currency)
+            .all()
+        )
+    except Exception:
+        return
+    for row_cur, amount in rows:
+        if not amount:
+            continue
+        logger.warning(
+            f"窗口内存在 {row_cur or 'UNKNOWN'} 币种的花费 {amount:.4f}，"
+            f"未计入 {cur} 预算上限；预算保护对这部分不可靠",
+            extra={"status": "budget_currency_mismatch",
+                   "currency": row_cur or "UNKNOWN", "cost": round(amount, 6),
+                   "limit_currency": cur})
 
 
 async def check_budget() -> None:
@@ -149,8 +206,9 @@ async def check_budget() -> None:
 
 async def reset_cache_for_test() -> None:
     """测试用：清空进程内累加缓存并重置冷启动标记"""
-    global _spent, _calls_since_refresh, _never_read_db
+    global _spent, _spent_currency, _calls_since_refresh, _never_read_db
     async with _lock:
         _spent = 0.0
+        _spent_currency = None
         _calls_since_refresh = 0
         _never_read_db = True

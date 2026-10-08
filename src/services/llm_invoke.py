@@ -61,11 +61,26 @@ def _extract_usage(msg: Any):
     return None, None
 
 
+def _extract_served_model(msg: Any, fallback: str) -> str:
+    """供应商实际提供服务的模型版本，取不到就用请求名兜底。
+
+    DeepSeek 按模型名路由到具体版本（deepseek-flash -> DeepSeek-V4.1-Flash，
+    官方文档明确写了"模型版本"与"模型名"是两个东西）。只记请求名的话，
+    同一份简历在不同时间跑出不同分数时，无法判断是不是供应商换了底层版本。
+    """
+    meta = getattr(msg, "response_metadata", None) or {}
+    for key in ("model_name", "model"):
+        v = meta.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()[:64]
+    return fallback
+
+
 def _write_log(*, call_site: str, model: str, base_url: str,
                input_tokens, output_tokens, cost: float,
                latency_ms: int, status: str, degraded: bool,
                prompt_text: str, candidate_id: Optional[int],
-               error: Optional[str]) -> None:
+               error: Optional[str], model_served: Optional[str] = None) -> None:
     """写 LLMCallLog。任何写库失败都不能影响主流程。"""
     try:
         from src.models.database import SessionLocal, LLMCallLog, ensure_tables
@@ -79,6 +94,7 @@ def _write_log(*, call_site: str, model: str, base_url: str,
                 call_site=call_site,
                 candidate_id=candidate_id,
                 model=model,
+                model_served=model_served or model,
                 base_url=base_url,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -118,9 +134,27 @@ def _client_info(llm=None):
            str(getattr(llm, "openai_api_base", "") or "")[:128]
 
 
+# 并发闸门：限制同时在途的调用数，避免批量任务自造 429。
+# 懒创建——模块导入时可能还没有事件循环，且测试会改配置。
+_sem: Optional[asyncio.Semaphore] = None
+_sem_size: int = -1
+
+
+def _semaphore() -> Optional[asyncio.Semaphore]:
+    """按配置返回信号量；LLM_MAX_CONCURRENCY <= 0 表示不限。"""
+    global _sem, _sem_size
+    limit = settings.LLM_MAX_CONCURRENCY
+    if not limit or limit <= 0:
+        return None
+    if _sem is None or _sem_size != limit:
+        _sem = asyncio.Semaphore(limit)
+        _sem_size = limit
+    return _sem
+
+
 async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: str,
                       candidate_id: Optional[int], client=None):
-    """预算预检 → 发起调用 → 返回 (AIMessage, 元信息)。
+    """预算预检 → 并发闸门 → 发起调用 → 返回 (AIMessage, 元信息)。
 
     client 为 None 时用默认客户端；知识库问答有自己的 temperature=0.3 客户端
     （与招聘评估的 0.1 不同，生成式回答需要更高随机性），通过此参数传入，
@@ -139,13 +173,20 @@ async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: st
     chain = prompt | runnable
 
     started = time.time()
-    msg = await asyncio.to_thread(chain.invoke, variables)
+    sem = _semaphore()
+    if sem is None:
+        msg = await asyncio.to_thread(chain.invoke, variables)
+    else:
+        # 只在"等待 + 调用"这段占用名额，埋点/记账不占
+        async with sem:
+            msg = await asyncio.to_thread(chain.invoke, variables)
     latency_ms = int((time.time() - started) * 1000)
     in_tok, out_tok = _extract_usage(msg)
     cost = budget.cost_of_call(in_tok, out_tok)
     await budget.add_spend(cost)
     return msg, {
-        "model": model, "base_url": base_url, "input_tokens": in_tok,
+        "model": model, "model_served": _extract_served_model(msg, model),
+        "base_url": base_url, "input_tokens": in_tok,
         "output_tokens": out_tok, "cost": cost, "latency_ms": latency_ms,
     }
 
@@ -179,7 +220,7 @@ async def invoke_json(prompt_text: str, variables: Dict[str, Any],
         result = JsonOutputParser().invoke(msg)
     except Exception as e:
         detail = f"[JSONParseError] {str(e)[:200]}"
-        _write_log(call_site=call_site, model=meta["model"], base_url=meta["base_url"],
+        _write_log(call_site=call_site, model=meta["model"], model_served=meta["model_served"], base_url=meta["base_url"],
                    input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
                    cost=meta["cost"], latency_ms=meta["latency_ms"],
                    status=_STATUS_FAILED, degraded=True, prompt_text=prompt_text,
@@ -188,7 +229,7 @@ async def invoke_json(prompt_text: str, variables: Dict[str, Any],
               meta["cost"], meta["latency_ms"], _STATUS_FAILED)
         return default
 
-    _write_log(call_site=call_site, model=meta["model"], base_url=meta["base_url"],
+    _write_log(call_site=call_site, model=meta["model"], model_served=meta["model_served"], base_url=meta["base_url"],
                input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
                cost=meta["cost"], latency_ms=meta["latency_ms"],
                status=_STATUS_OK, degraded=False, prompt_text=prompt_text,
@@ -228,7 +269,7 @@ async def invoke_text(prompt_text: str, variables: Dict[str, Any],
         return default
 
     result = StrOutputParser().invoke(msg)
-    _write_log(call_site=call_site, model=meta["model"], base_url=meta["base_url"],
+    _write_log(call_site=call_site, model=meta["model"], model_served=meta["model_served"], base_url=meta["base_url"],
                input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
                cost=meta["cost"], latency_ms=meta["latency_ms"],
                status=_STATUS_OK, degraded=False, prompt_text=prompt_text,
