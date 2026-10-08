@@ -26,7 +26,7 @@ def _seed(callsite, n=1, cost=0.01, status="ok", degraded=False, tokens=(1000, 2
                 call_site=site,
                 model="fake",
                 input_tokens=tokens[0], output_tokens=tokens[1],
-                cost_usd=cost, latency_ms=120,
+                cost=cost, latency_ms=120,
                 status=status, degraded=degraded, usage_missing=False,
             ))
         db.commit()
@@ -41,10 +41,10 @@ class TestSummary:
         body = client.get("/llm-stats/summary", params={"days": 7},
                           headers=auth_headers).json()
         assert body["totals"]["calls"] == 5
-        assert body["totals"]["cost_usd"] == pytest.approx(0.07)
+        assert body["totals"]["cost"] == pytest.approx(0.07)
         assert len(body["by_site"]) == 2
         # 按成本倒序
-        assert body["by_site"][0]["cost_usd"] >= body["by_site"][1]["cost_usd"]
+        assert body["by_site"][0]["cost"] >= body["by_site"][1]["cost"]
 
     def test_degraded_rate_computed(self, client, auth_headers):
         site = _seed("assess_cultural_fit", n=4, degraded=False)
@@ -72,14 +72,14 @@ class TestSummary:
 
     def test_budget_state_exposed(self, client, auth_headers):
         body = client.get("/llm-stats/summary", headers=auth_headers).json()
-        assert "enabled" in body["budget"] and "limit_usd" in body["budget"]
+        assert "enabled" in body["budget"] and "limit" in body["budget"]
         # 单价未配置时前端要能提示"预算未生效"
         assert "pricing_configured" in body["budget"]
 
     def test_empty_returns_zeros(self, client, auth_headers):
         body = client.get("/llm-stats/summary", headers=auth_headers).json()
         assert body["totals"]["calls"] == 0
-        assert body["totals"]["cost_usd"] == 0
+        assert body["totals"]["cost"] == 0
         assert body["by_site"] == []
 
     def test_days_parameter_validated(self, client, auth_headers):
@@ -101,7 +101,7 @@ class TestRecentCalls:
         # 只应有元数据，绝不能回传 prompt 全文或模型输出
         assert set(r.keys()) <= {
             "id", "created_at", "call_site", "candidate_id", "model",
-            "input_tokens", "output_tokens", "cost_usd", "latency_ms",
+            "input_tokens", "output_tokens", "cost", "currency", "latency_ms",
             "status", "degraded", "usage_missing", "prompt_hash", "error",
         }
         assert len(r["prompt_hash"]) == 12, "prompt 只存哈希前 12 位"

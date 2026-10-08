@@ -5,7 +5,7 @@ export interface LlmSiteStat {
   calls: number;
   input_tokens: number;
   output_tokens: number;
-  cost_usd: number;
+  cost: number;
   avg_latency_ms: number;
   max_latency_ms: number;
   failed: number;
@@ -18,24 +18,30 @@ export interface LlmBudgetState {
   enabled: boolean;
   action: string;
   period: string;
-  limit_usd: number;
+  /** 上限金额，币种见 currency（等于模型配置里的计价币种，不固定为美元） */
+  limit: number;
+  currency: string;
   pricing_configured: boolean;
+  model: string;
+  config_source: string;
+  is_peak_now: boolean;
 }
 
 export interface LlmStats {
   days: number;
+  currency: string;
   totals: {
     calls: number;
     input_tokens: number;
     output_tokens: number;
-    cost_usd: number;
-    avg_cost_per_call_usd: number;
+    cost: number;
+    avg_cost_per_call: number;
     failed: number;
     degraded: number;
     failed_rate: number;
   };
   by_site: LlmSiteStat[];
-  daily: { date: string; calls: number; cost_usd: number }[];
+  daily: { date: string; calls: number; cost: number }[];
   budget: LlmBudgetState;
   log_retention_days: number;
 }
@@ -48,7 +54,8 @@ export interface LlmCallRow {
   model: string | null;
   input_tokens: number | null;
   output_tokens: number | null;
-  cost_usd: number | null;
+  cost: number | null;
+  currency: string | null;
   latency_ms: number | null;
   status: string;
   degraded: boolean;

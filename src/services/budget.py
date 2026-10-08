@@ -24,7 +24,7 @@ class BudgetExceeded(RuntimeError):
 
 
 # 进程内累加缓存：每次都 SUM 全表太重，按 N 次回读一次数据库
-_spent_usd: float = 0.0
+_spent: float = 0.0
 _calls_since_refresh: int = 0
 # 冷启动标记：首次检查必须先回读数据库，否则重启后保护完全失效
 _never_read_db: bool = True
@@ -41,27 +41,41 @@ def _window_start():
 
 def pricing_configured() -> bool:
     """单价是否已配置。未配置时成本恒为 0，预算检查无意义。"""
-    return (settings.LLM_INPUT_PRICE_PER_MILLION or 0) > 0 or \
-           (settings.LLM_OUTPUT_PRICE_PER_MILLION or 0) > 0
+    from src.services import llm_config
+    return llm_config.is_pricing_configured()
 
 
-def compute_cost_usd(input_tokens, output_tokens):
-    """按配置单价折算成本；未配单价返回 0"""
-    if not pricing_configured():
-        return 0.0
-    cost = 0.0
-    if input_tokens:
-        cost += input_tokens / 1_000_000 * settings.LLM_INPUT_PRICE_PER_MILLION
-    if output_tokens:
-        cost += output_tokens / 1_000_000 * settings.LLM_OUTPUT_PRICE_PER_MILLION
-    return round(cost, 6)
+def cost_of_call(input_tokens, output_tokens):
+    """按当前生效配置折算本次调用成本（含分时计价）。
+
+    返回值的币种由 current_currency() 给出，不固定为美元。
+    """
+    from src.services import llm_config
+    return llm_config.compute_cost(input_tokens, output_tokens)
 
 
-async def add_spend(cost_usd: float) -> None:
-    """累计本次调用的成本（异步安全）"""
-    global _spent_usd, _calls_since_refresh
+def current_currency() -> str:
+    from src.services import llm_config
+    return llm_config.get_effective_config()["currency"]
+
+
+def budget_limit() -> float:
+    """预算上限（币种同 current_currency()）。
+
+    兼容旧字段名 LLM_BUDGET_USD：显式设置过就优先用它，
+    否则读 LLM_BUDGET_AMOUNT，最后回退 .env 默认值。
+    """
+    legacy = getattr(settings, "LLM_BUDGET_USD", None)
+    if legacy is not None:
+        return legacy or 0.0
+    return getattr(settings, "LLM_BUDGET_AMOUNT", 0.0) or 0.0
+
+
+async def add_spend(cost: float) -> None:
+    """累计本次调用的成本（异步安全）。cost 的币种同 current_currency()。"""
+    global _spent, _calls_since_refresh
     async with _lock:
-        _spent_usd += cost_usd or 0.0
+        _spent += cost or 0.0
         _calls_since_refresh += 1
 
 
@@ -74,7 +88,7 @@ async def spent_in_window() -> float:
     就会在"今天已经花掉上限"的情况下完全放行——保护等同失效。
     因此首次调用（或距上次回读超过 N 次）都强制查库。
     """
-    global _spent_usd, _calls_since_refresh, _never_read_db
+    global _spent, _calls_since_refresh, _never_read_db
 
     every = max(1, settings.LLM_BUDGET_REFRESH_EVERY)
     need_refresh = _never_read_db or _calls_since_refresh >= every
@@ -86,22 +100,22 @@ async def spent_in_window() -> float:
         async with _lock:
             _calls_since_refresh = 0
             _never_read_db = False
-            base = _spent_usd
+            base = _spent
         db = SessionLocal()
         try:
             persisted = (
-                db.query(func.coalesce(func.sum(LLMCallLog.cost_usd), 0.0))
+                db.query(func.coalesce(func.sum(LLMCallLog.cost), 0.0))
                 .filter(LLMCallLog.created_at >= _window_start())
                 .scalar()
             )
             return float(persisted or 0.0) + base
         except Exception as e:
             logger.warning("回读预算失败，按进程内累计估算", extra={"error": str(e)[:200]})
-            return _spent_usd
+            return _spent
         finally:
             db.close()
 
-    return _spent_usd
+    return _spent
 
 
 async def check_budget() -> None:
@@ -115,25 +129,28 @@ async def check_budget() -> None:
         # 单价未配置 → 所有调用成本记 0 → 阈值比较无意义，跳过保护
         return
 
-    limit = settings.LLM_BUDGET_USD or 0
+    limit = budget_limit()
     if limit <= 0:
         return
 
     spent = await spent_in_window()
     if spent >= limit:
+        cur = current_currency()
         msg = (f"LLM 成本预算已用尽：{settings.LLM_BUDGET_PERIOD} 已花 "
-               f"${spent:.4f} / 上限 ${limit:.2f}")
+               f"{spent:.4f} {cur} / 上限 {limit:.2f} {cur}")
         logger.warning("预算超限，停止后续 LLM 调用", extra={
             "status": "budget_blocked",
-            "cost_usd": round(spent, 6),
+            "cost": round(spent, 6),
+            "currency": cur,
+            "limit": limit,
         })
         raise BudgetExceeded(msg)
 
 
 async def reset_cache_for_test() -> None:
     """测试用：清空进程内累加缓存并重置冷启动标记"""
-    global _spent_usd, _calls_since_refresh, _never_read_db
+    global _spent, _calls_since_refresh, _never_read_db
     async with _lock:
-        _spent_usd = 0.0
+        _spent = 0.0
         _calls_since_refresh = 0
         _never_read_db = True

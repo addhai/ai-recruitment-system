@@ -30,9 +30,12 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
-        # logger.info("x", extra={"call_site": ...}) 注入的字段原样带出
+        # logger.info("x", extra={"call_site": ...}) 注入的字段原样带出。
+        # 金额字段叫 cost（不叫 cost_usd）——币种由 currency 标明，
+        # 否则人民币计价的读数会被日志当成美元。
         for key in ("call_site", "model", "input_tokens", "output_tokens",
-                    "cost_usd", "latency_ms", "status", "candidate_id"):
+                    "cost", "currency", "limit", "latency_ms", "status",
+                    "candidate_id"):
             value = getattr(record, key, None)
             if value is not None:
                 payload[key] = value

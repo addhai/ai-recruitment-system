@@ -89,17 +89,17 @@ class TestCostComputation:
     def test_zero_pricing_yields_zero(self, monkeypatch):
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 0.0)
         monkeypatch.setattr(budget.settings, "LLM_OUTPUT_PRICE_PER_MILLION", 0.0)
-        assert budget.compute_cost_usd(100000, 100000) == 0.0
+        assert budget.cost_of_call(100000, 100000) == 0.0
 
     def test_pricing_applied(self, monkeypatch):
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 2.0)
         monkeypatch.setattr(budget.settings, "LLM_OUTPUT_PRICE_PER_MILLION", 8.0)
         # 1M input * $2 + 0.5M output * $8 = 2 + 4
-        assert budget.compute_cost_usd(1_000_000, 500_000) == pytest.approx(6.0)
+        assert budget.cost_of_call(1_000_000, 500_000) == pytest.approx(6.0)
 
     def test_zero_tokens_no_error(self, monkeypatch):
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 2.0)
-        assert budget.compute_cost_usd(None, None) == 0.0
+        assert budget.cost_of_call(None, None) == 0.0
 
 
 # ================================================================ 预算
@@ -108,9 +108,9 @@ class TestBudget:
     def _reset(self, monkeypatch):
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_ENABLED", True)
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_ACTION", "halt")
-        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", 5.0)
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_AMOUNT", 5.0)
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", None)
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 2.0)
-        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", 5.0)
         yield
 
     def test_under_limit_passes(self, monkeypatch):
@@ -140,7 +140,7 @@ class TestBudget:
         asyncio.run(budget.check_budget())
 
     def test_zero_limit_skips(self, monkeypatch):
-        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", 0.0)
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_AMOUNT", 0.0)
         monkeypatch.setattr(budget, "spent_in_window", _async_ret(99.0))
         asyncio.run(budget.check_budget())
 
@@ -148,7 +148,28 @@ class TestBudget:
         asyncio.run(budget.reset_cache_for_test())
         asyncio.run(budget.add_spend(0.25))
         asyncio.run(budget.add_spend(0.75))
-        assert budget._spent_usd == pytest.approx(1.0)
+        assert budget._spent == pytest.approx(1.0)
+
+    def test_budget_limit_reads_amount_field(self, monkeypatch):
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", None)
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_AMOUNT", 12.5)
+        assert budget.budget_limit() == pytest.approx(12.5)
+
+    def test_budget_limit_legacy_alias_wins(self, monkeypatch):
+        """旧字段名被显式设置时优先，避免老部署升级后静默丢掉上限保护"""
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_AMOUNT", 12.5)
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", 3.0)
+        assert budget.budget_limit() == pytest.approx(3.0)
+
+    def test_over_limit_message_uses_configured_currency(self, monkeypatch):
+        """上限金额的币种必须跟计价币种一致，不能写死 $ 谎报金额"""
+        monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
+        monkeypatch.setattr(budget, "spent_in_window", _async_ret(6.0))
+        with pytest.raises(budget.BudgetExceeded) as ei:
+            asyncio.run(budget.check_budget())
+        msg = str(ei.value)
+        assert "CNY" in msg
+        assert "$" not in msg
 
 
 # ================================================================ 埋点落库
@@ -171,6 +192,7 @@ class TestInvokeJsonInstrumentation:
         monkeypatch.setattr(llm_invoke, "get_llm", lambda: _FakeLLM(
             _msg_json(usage_metadata={"input_tokens": 1000, "output_tokens": 200})))
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 1.0)
+        monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
         monkeypatch.setattr(budget.settings, "LLM_OUTPUT_PRICE_PER_MILLION", 2.0)
 
         out = asyncio.run(llm_invoke.invoke_json(
@@ -181,7 +203,7 @@ class TestInvokeJsonInstrumentation:
         assert log.call_site == "unit_test_site"
         assert log.candidate_id == 42
         assert log.input_tokens == 1000 and log.output_tokens == 200
-        assert log.cost_usd == pytest.approx(0.0014)  # 1000/1e6*1 + 200/1e6*2
+        assert log.cost == pytest.approx(0.0014)  # 1000/1e6*1 + 200/1e6*2
         assert log.status == "ok"
         assert log.degraded is False
         assert log.usage_missing is False
@@ -256,15 +278,16 @@ class TestColdStartBudget:
 
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_ENABLED", True)
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_ACTION", "halt")
-        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", 0.01)
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_AMOUNT", 0.01)
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 1.0)
+        monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_REFRESH_EVERY", 20)
 
         # 窗口内先有一笔超限成本
         with SessionLocal() as db:
             db.add(LLMCallLog(created_at=datetime.utcnow(), call_site="cold_start_seed",
                               model="m", input_tokens=1_000_000, output_tokens=0,
-                              cost_usd=0.5, latency_ms=1, status="ok",
+                              cost=0.5, latency_ms=1, status="ok",
                               degraded=False, usage_missing=False, prompt_hash="x" * 64))
             db.commit()
 
@@ -282,8 +305,9 @@ class TestColdStartBudget:
         """未到刷新间隔且已回读过时，不应每次都查库（性能考量）"""
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_ENABLED", True)
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_ACTION", "halt")
-        monkeypatch.setattr(budget.settings, "LLM_BUDGET_USD", 100.0)
+        monkeypatch.setattr(budget.settings, "LLM_BUDGET_AMOUNT", 100.0)
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 1.0)
+        monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
         monkeypatch.setattr(budget.settings, "LLM_BUDGET_REFRESH_EVERY", 20)
 
         async def _scenario():
@@ -321,3 +345,31 @@ class TestPurgeOldLogs:
     def test_purge_zero_days_disabled(self):
         from src.models.database import purge_old_llm_logs
         assert purge_old_llm_logs(days=0) == 0
+
+
+# ================================================================ JSON 日志字段
+class TestJsonLogMoneyFields:
+    """结构化日志只带出白名单字段：金额字段一旦改名而白名单没跟上，
+    日志里就会**静默丢掉花费**，排查成本问题时看不到数。"""
+
+    def _format(self, msg, extra):
+        import json
+        import logging
+        from src.logging_setup import JsonFormatter
+        rec = logging.LogRecord("t", logging.INFO, __file__, 1, msg, None, None)
+        for k, v in extra.items():
+            setattr(rec, k, v)
+        return json.loads(JsonFormatter().format(rec))
+
+    def test_cost_and_currency_survive(self):
+        out = self._format("llm call", {"call_site": "s", "cost": 1.25,
+                                        "currency": "CNY", "limit": 5.0})
+        assert out["cost"] == 1.25
+        assert out["currency"] == "CNY"
+        assert out["limit"] == 5.0
+
+    def test_budget_block_log_fields(self):
+        out = self._format("预算超限", {"status": "budget_blocked", "cost": 9.0,
+                                        "currency": "CNY", "limit": 5.0})
+        assert out["status"] == "budget_blocked"
+        assert out["cost"] == 9.0

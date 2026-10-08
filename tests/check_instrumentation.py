@@ -5,7 +5,7 @@ cur = con.cursor()
 
 print("=== 埋点落库确认 ===")
 n, cost, tok_in, tok_out = cur.execute(
-    "SELECT COUNT(*), COALESCE(SUM(cost_usd),0), "
+    "SELECT COUNT(*), COALESCE(SUM(cost),0), "
     "COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0) FROM llm_call_logs"
 ).fetchone()
 print(f"  总调用 {n} 次")

@@ -21,28 +21,37 @@ from src.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
-_llm_instance: Optional[ChatOpenAI] = None
+# 客户端按 (model, base_url, api_key) 缓存。用 dict 而非单一实例，
+# 这样界面上切换模型后能立即生效，不必重启服务。
+_llm_cache: Dict[tuple, ChatOpenAI] = {}
 
 
-def get_llm() -> ChatOpenAI:
-    """延迟初始化 LLM，避免启动时无 API Key 报错。
+def get_llm(temperature: Optional[float] = None) -> ChatOpenAI:
+    """按当前生效配置构造客户端（数据库配置优先，回退 .env）。
 
     评分类任务要求低温度（0.1）保证同分输入结果稳定可复现，
     温度偏高会让同一候选人两次跑分差拉大，破坏鉴别力验证。
     """
-    global _llm_instance
-    if _llm_instance is None:
-        if not settings.LLM_API_KEY:
-            raise RuntimeError("LLM API Key 未配置")
-        _llm_instance = ChatOpenAI(
-            model=settings.LLM_MODEL,
-            temperature=0.1,
-            timeout=45,
+    from src.services import llm_config
+
+    cfg = llm_config.get_effective_config()
+    if not cfg["api_key"]:
+        raise RuntimeError("LLM API Key 未配置（可在「系统设置 → 模型配置」中填写）")
+
+    temp = temperature if temperature is not None else (cfg["temperature"] or 0.1)
+    key = (cfg["model"], cfg["base_url"], cfg["api_key"], temp)
+    llm = _llm_cache.get(key)
+    if llm is None:
+        llm = ChatOpenAI(
+            model=cfg["model"],
+            temperature=temp,
+            timeout=cfg["timeout_seconds"] or settings.LLM_TIMEOUT_SECONDS,
             max_retries=2,
-            api_key=settings.LLM_API_KEY,
-            base_url=settings.LLM_API_BASE,
+            api_key=cfg["api_key"],
+            base_url=cfg["base_url"],
         )
-    return _llm_instance
+        _llm_cache[key] = llm
+    return llm
 
 
 def extract_llm_error(e: Exception) -> str:

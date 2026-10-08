@@ -62,7 +62,7 @@ def _extract_usage(msg: Any):
 
 
 def _write_log(*, call_site: str, model: str, base_url: str,
-               input_tokens, output_tokens, cost_usd: float,
+               input_tokens, output_tokens, cost: float,
                latency_ms: int, status: str, degraded: bool,
                prompt_text: str, candidate_id: Optional[int],
                error: Optional[str]) -> None:
@@ -82,7 +82,8 @@ def _write_log(*, call_site: str, model: str, base_url: str,
                 base_url=base_url,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
-                cost_usd=cost_usd,
+                cost=cost,
+                currency=budget.current_currency(),
                 latency_ms=latency_ms,
                 status=status,
                 degraded=degraded,
@@ -99,13 +100,13 @@ def _write_log(*, call_site: str, model: str, base_url: str,
 
 
 def _emit(call_site: str, model: str, in_tok, out_tok,
-          cost_usd: float, latency_ms: int, status: str) -> None:
+          cost: float, latency_ms: int, status: str) -> None:
     logger.info("llm call", extra={
         "call_site": call_site,
         "model": model,
         "input_tokens": in_tok,
         "output_tokens": out_tok,
-        "cost_usd": cost_usd,
+        "cost": cost,
         "latency_ms": latency_ms,
         "status": status,
     })
@@ -141,11 +142,11 @@ async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: st
     msg = await asyncio.to_thread(chain.invoke, variables)
     latency_ms = int((time.time() - started) * 1000)
     in_tok, out_tok = _extract_usage(msg)
-    cost = budget.compute_cost_usd(in_tok, out_tok)
+    cost = budget.cost_of_call(in_tok, out_tok)
     await budget.add_spend(cost)
     return msg, {
         "model": model, "base_url": base_url, "input_tokens": in_tok,
-        "output_tokens": out_tok, "cost_usd": cost, "latency_ms": latency_ms,
+        "output_tokens": out_tok, "cost": cost, "latency_ms": latency_ms,
     }
 
 
@@ -169,7 +170,7 @@ async def invoke_json(prompt_text: str, variables: Dict[str, Any],
         logger.warning("LLM 调用失败，降级为规则结果",
                        extra={"call_site": call_site, "status": _STATUS_FAILED})
         _write_log(call_site=call_site, model="?", base_url="",
-                   input_tokens=None, output_tokens=None, cost_usd=0.0,
+                   input_tokens=None, output_tokens=None, cost=0.0,
                    latency_ms=0, status=_STATUS_FAILED, degraded=True,
                    prompt_text=prompt_text, candidate_id=candidate_id, error=detail)
         return default
@@ -180,20 +181,20 @@ async def invoke_json(prompt_text: str, variables: Dict[str, Any],
         detail = f"[JSONParseError] {str(e)[:200]}"
         _write_log(call_site=call_site, model=meta["model"], base_url=meta["base_url"],
                    input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
-                   cost_usd=meta["cost_usd"], latency_ms=meta["latency_ms"],
+                   cost=meta["cost"], latency_ms=meta["latency_ms"],
                    status=_STATUS_FAILED, degraded=True, prompt_text=prompt_text,
                    candidate_id=candidate_id, error=detail)
         _emit(call_site, meta["model"], meta["input_tokens"], meta["output_tokens"],
-              meta["cost_usd"], meta["latency_ms"], _STATUS_FAILED)
+              meta["cost"], meta["latency_ms"], _STATUS_FAILED)
         return default
 
     _write_log(call_site=call_site, model=meta["model"], base_url=meta["base_url"],
                input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
-               cost_usd=meta["cost_usd"], latency_ms=meta["latency_ms"],
+               cost=meta["cost"], latency_ms=meta["latency_ms"],
                status=_STATUS_OK, degraded=False, prompt_text=prompt_text,
                candidate_id=candidate_id, error=None)
     _emit(call_site, meta["model"], meta["input_tokens"], meta["output_tokens"],
-          meta["cost_usd"], meta["latency_ms"], _STATUS_OK)
+          meta["cost"], meta["latency_ms"], _STATUS_OK)
     return result
 
 
@@ -219,7 +220,7 @@ async def invoke_text(prompt_text: str, variables: Dict[str, Any],
         logger.warning("LLM 文本调用失败，使用兜底答案",
                        extra={"call_site": call_site, "status": _STATUS_FAILED})
         _write_log(call_site=call_site, model="?", base_url="",
-                   input_tokens=None, output_tokens=None, cost_usd=0.0,
+                   input_tokens=None, output_tokens=None, cost=0.0,
                    latency_ms=0, status=_STATUS_FAILED, degraded=True,
                    prompt_text=prompt_text, candidate_id=candidate_id, error=detail)
         if raise_on_error:
@@ -229,9 +230,9 @@ async def invoke_text(prompt_text: str, variables: Dict[str, Any],
     result = StrOutputParser().invoke(msg)
     _write_log(call_site=call_site, model=meta["model"], base_url=meta["base_url"],
                input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
-               cost_usd=meta["cost_usd"], latency_ms=meta["latency_ms"],
+               cost=meta["cost"], latency_ms=meta["latency_ms"],
                status=_STATUS_OK, degraded=False, prompt_text=prompt_text,
                candidate_id=candidate_id, error=None)
     _emit(call_site, meta["model"], meta["input_tokens"], meta["output_tokens"],
-          meta["cost_usd"], meta["latency_ms"], _STATUS_OK)
+          meta["cost"], meta["latency_ms"], _STATUS_OK)
     return result

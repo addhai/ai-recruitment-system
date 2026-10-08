@@ -6,8 +6,19 @@ import { getLlmStats, getRecentLlmCalls } from '../services/llmStats';
 const fmtNum = (n: number | null | undefined) =>
   n === null || n === undefined ? '-' : n.toLocaleString('zh-CN');
 
-const fmtCost = (n: number | null | undefined) =>
-  n === null || n === undefined ? '-' : `$${Number(n).toFixed(4)}`;
+/** 币种符号：未知币种直接显示代码，不要猜成 $ —— 猜错等于谎报金额 */
+const currencySymbol = (cur: string | null | undefined) => {
+  const c = (cur || '').toUpperCase();
+  if (c === 'CNY' || c === 'RMB') return '¥';
+  if (c === 'USD') return '$';
+  if (c === 'EUR') return '€';
+  return c ? `${c} ` : '';
+};
+
+const fmtCost = (n: number | null | undefined, cur?: string | null) =>
+  n === null || n === undefined
+    ? '-'
+    : `${currencySymbol(cur)}${Number(n).toFixed(4)}`;
 
 const LlmCost: React.FC = () => {
   const [days, setDays] = useState(7);
@@ -103,9 +114,9 @@ const LlmCost: React.FC = () => {
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
               <p className="text-xs text-slate-500">总成本</p>
-              <p className="text-2xl font-bold text-slate-800">{fmtCost(t?.cost_usd)}</p>
+              <p className="text-2xl font-bold text-slate-800">{fmtCost(t?.cost, stats?.currency)}</p>
               <p className="text-xs text-slate-400 mt-1">
-                单次均价 {fmtCost(t?.avg_cost_per_call_usd)}
+                单次均价 {fmtCost(t?.avg_cost_per_call, stats?.currency)}
               </p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4">
@@ -133,7 +144,7 @@ const LlmCost: React.FC = () => {
                   {budget.enabled ? '已启用' : '已关闭'}
                 </span>
                 ，{budget.period === 'monthly' ? '每月' : '每日'}上限{' '}
-                <strong>${budget.limit_usd}</strong>，
+                <strong>{fmtCost(budget.limit, budget.currency)}</strong>，
                 超限动作：
                 <span className="font-mono">
                   {budget.action === 'halt' ? 'halt（停止调用并转人工）' : 'warn（仅告警）'}
@@ -170,7 +181,7 @@ const LlmCost: React.FC = () => {
                         <td className="px-3 py-2 text-right text-slate-500 text-xs">
                           {fmtNum(s.input_tokens)} / {fmtNum(s.output_tokens)}
                         </td>
-                        <td className="px-3 py-2 text-right">{fmtCost(s.cost_usd)}</td>
+                        <td className="px-3 py-2 text-right">{fmtCost(s.cost, stats?.currency)}</td>
                         <td className="px-3 py-2 text-right text-slate-500">
                           {s.avg_latency_ms} ms
                         </td>
@@ -216,7 +227,7 @@ const LlmCost: React.FC = () => {
                         <td className="px-3 py-1.5 text-right text-slate-500">
                           {c.usage_missing ? '未知' : `${fmtNum(c.input_tokens)}/${fmtNum(c.output_tokens)}`}
                         </td>
-                        <td className="px-3 py-1.5 text-right">{fmtCost(c.cost_usd)}</td>
+                        <td className="px-3 py-1.5 text-right">{fmtCost(c.cost, c.currency)}</td>
                         <td className="px-3 py-1.5 text-right text-slate-500">{c.latency_ms} ms</td>
                         <td className="px-3 py-1.5">
                           <span className={

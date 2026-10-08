@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session
 
 from src.config import settings
 from src.models.database import get_db, LLMCallLog
-from src.api.auth import require_hr_admin, get_current_user
+from src.api.auth import require_hr_admin
+from src.services import llm_config, budget
 
 router = APIRouter(prefix="/llm-stats", tags=["llm-stats"])
 
@@ -32,7 +33,7 @@ def get_summary(
             func.count(LLMCallLog.id),
             func.coalesce(func.sum(LLMCallLog.input_tokens), 0),
             func.coalesce(func.sum(LLMCallLog.output_tokens), 0),
-            func.coalesce(func.sum(LLMCallLog.cost_usd), 0.0),
+            func.coalesce(func.sum(LLMCallLog.cost), 0.0),
             func.coalesce(func.avg(LLMCallLog.latency_ms), 0),
             func.coalesce(func.max(LLMCallLog.latency_ms), 0),
             func.sum(cast(LLMCallLog.status == "failed", Integer)),
@@ -41,7 +42,7 @@ def get_summary(
         )
         .filter(LLMCallLog.created_at >= since)
         .group_by(LLMCallLog.call_site)
-        .order_by(func.sum(LLMCallLog.cost_usd).desc())
+        .order_by(func.sum(LLMCallLog.cost).desc())
         .all()
     )
 
@@ -62,7 +63,7 @@ def get_summary(
             "calls": calls or 0,
             "input_tokens": in_tok or 0,
             "output_tokens": out_tok or 0,
-            "cost_usd": round(cost or 0.0, 6),
+            "cost": round(cost or 0.0, 6),
             "avg_latency_ms": int(avg_ms or 0),
             "max_latency_ms": int(max_ms or 0),
             "failed": failed or 0,
@@ -76,7 +77,7 @@ def get_summary(
         db.query(
             func.date(LLMCallLog.created_at).label("d"),
             func.count(LLMCallLog.id),
-            func.coalesce(func.sum(LLMCallLog.cost_usd), 0.0),
+            func.coalesce(func.sum(LLMCallLog.cost), 0.0),
         )
         .filter(LLMCallLog.created_at >= since)
         .group_by("d")
@@ -84,30 +85,35 @@ def get_summary(
         .all()
     )
 
+    effective = llm_config.get_effective_config()
     budget_state: Dict[str, Any] = {
         "enabled": settings.LLM_BUDGET_ENABLED,
         "action": settings.LLM_BUDGET_ACTION,
         "period": settings.LLM_BUDGET_PERIOD,
-        "limit_usd": settings.LLM_BUDGET_USD,
+        "limit": budget.budget_limit(),
+        "currency": effective["currency"],
         # 单价未配置时所有成本记 0，预算比较无意义，明确告知前端
-        "pricing_configured": (settings.LLM_INPUT_PRICE_PER_MILLION or 0) > 0
-                              or (settings.LLM_OUTPUT_PRICE_PER_MILLION or 0) > 0,
+        "pricing_configured": llm_config.is_pricing_configured(),
+        "model": effective["model"],
+        "config_source": effective["source"],
+        "is_peak_now": llm_config.is_peak_now(),
     }
 
     return {
         "days": days,
+        "currency": effective["currency"],
         "totals": {
             "calls": total_calls,
             "input_tokens": total_in,
             "output_tokens": total_out,
-            "cost_usd": round(total_cost, 6),
-            "avg_cost_per_call_usd": round(total_cost / total_calls, 6) if total_calls else 0.0,
+            "cost": round(total_cost, 6),
+            "avg_cost_per_call": round(total_cost / total_calls, 6) if total_calls else 0.0,
             "failed": total_failed,
             "degraded": total_degraded,
             "failed_rate": round(total_failed / total_calls, 4) if total_calls else 0.0,
         },
         "by_site": by_site,
-        "daily": [{"date": d, "calls": c, "cost_usd": round(cost or 0.0, 6)}
+        "daily": [{"date": d, "calls": c, "cost": round(cost or 0.0, 6)}
                   for d, c, cost in daily],
         "budget": budget_state,
         "log_retention_days": settings.LLM_LOG_RETENTION_DAYS,
@@ -134,7 +140,8 @@ def list_recent_calls(
         "model": r.model,
         "input_tokens": r.input_tokens,
         "output_tokens": r.output_tokens,
-        "cost_usd": r.cost_usd,
+        "cost": r.cost,
+        "currency": r.currency,
         "latency_ms": r.latency_ms,
         "status": r.status,
         "degraded": r.degraded,
