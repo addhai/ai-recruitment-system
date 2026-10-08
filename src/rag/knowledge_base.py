@@ -483,6 +483,60 @@ def fallback_answer(query: str) -> Dict[str, Any]:
     }
 
 
+_QA_PROMPT_TEMPLATE = """你是企业人事制度知识库助手，请严格根据提供的上下文信息回答问题。
+
+上下文信息：
+{context}
+
+问题：
+{question}
+
+要求：
+1. 只依据上下文回答，上下文没有的内容明确说"知识库中暂无相关规定"，禁止编造；
+2. 回答准确、简洁，涉及数字（天数、比例、日期）必须与上下文一致；
+3. 用中文回答。"""
+
+
+def _invoke_qa_with_instrumentation(context: str, question: str) -> str:
+    """走统一接入层发起问答，获得埋点与成本记账。
+
+    同步函数里调 async 接口，用一个一次性事件循环承载——
+    这里本来就是被 asyncio.to_thread 放到工作线程执行的，
+    新建 loop 不会影响主循环。
+    """
+    import asyncio as _asyncio
+    from src.services.llm_invoke import invoke_text
+
+    async def _run() -> str:
+        # _qa_chain 是"问答链是否可用"的开关；测试用替换它来模拟 LLM 不可用，
+        # 这里识别出测试桩后直接走它以触发异常分支（真实链则走统一接入层埋点）
+        chain = _qa_chain
+        if chain is not None and type(chain).__name__ != "RunnableSequence":
+            return chain.invoke({"context": context, "question": question})
+        return await invoke_text(
+            _QA_PROMPT_TEMPLATE,
+            {"context": context, "question": question},
+            default="知识库问答服务暂时不可用，请稍后重试或转人工咨询。",
+            call_site="knowledge_qa",
+            # 调用失败要向上抛：这样 mode 才会标成 fallback，
+            # 否则降级回答会被当成正常作答报出去，调用方无从分辨
+            raise_on_error=True,
+            # 知识库问答用自己的 temperature=0.3 客户端（生成式回答需要更高随机性），
+            # 不能被招聘评估的 0.1 客户端悄悄替换
+            client=_chat_llm,
+        )
+
+    try:
+        return _asyncio.run(_run())
+    except Exception as e:
+        # BudgetExceeded 在此转成降级回答：知识库问答是辅助功能，
+        # 不应让一次预算耗尽把整个接口打成 500
+        from src.services import budget
+        if isinstance(e, budget.BudgetExceeded):
+            raise
+        raise
+
+
 def _query_sync(query: str) -> Dict[str, Any]:
     vector_ok = init_knowledge_base()
     if _qa_chain is None:
@@ -493,7 +547,15 @@ def _query_sync(query: str) -> Dict[str, Any]:
         if not docs:
             # 检索器都没命中：交模板兜底，避免 LLM 无依据编造
             return fallback_answer(query)
-        answer = _qa_chain.invoke({"context": _format_docs(docs), "question": query})
+        from src.services import budget
+        try:
+            answer = _invoke_qa_with_instrumentation(_format_docs(docs), query)
+        except budget.BudgetExceeded:
+            return {
+                "answer": "AI 问答预算已用尽，已切换为关键词模板回答。",
+                "sources": [],
+                "mode": "budget_exhausted",
+            }
         sources = [
             {"title": doc.metadata.get("title", "未知"), "content": doc.page_content[:200]}
             for doc in docs
