@@ -28,6 +28,57 @@ class User(Base):
     evaluations = relationship("Evaluation", back_populates="evaluator")
 
 
+class Position(Base):
+    """岗位：招聘需求本身，可先建岗位再补 JD。
+
+    与 JobDescription 分两层：岗位承载"要招什么人"（名称、部门、编制），
+    JD 承载"具体要求"。一个岗位可以先没有 JD，此时不能绑定候选人跑匹配；
+    JD 可有多个版本（如面向不同渠道的精简版/完整版）。
+    """
+    __tablename__ = "positions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(100), nullable=False)
+    department = Column(String(100))
+    location = Column(String(100))
+    headcount = Column(Integer)
+    description = Column(Text)
+    # draft: 草稿 | active: 招聘中 | archived: 已关闭
+    status = Column(String(20), default="draft")
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    job_descriptions = relationship("JobDescription", back_populates="position")
+
+
+class JobDescription(Base):
+    """岗位 JD：人岗匹配的真实依据。
+
+    此前匹配用的是 candidate.position 这个岗位名字符串，等于拿简历自述的职责
+    去匹配简历自己。现在要求先录入 JD、AI 解析成结构化画像、人工核对后启用。
+    """
+    __tablename__ = "job_descriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    position_id = Column(Integer, ForeignKey("positions.id"))
+    title = Column(String(100), nullable=False)
+    department = Column(String(100))
+    # draft: 已录入未启用 | active: 启用中，可被候选人绑定 | archived: 停用
+    status = Column(String(20), default="draft")
+    # pending: 待解析 | parsed: 解析成功 | failed: 解析失败（不可启用）
+    parse_status = Column(String(20), default="pending")
+    parse_error = Column(Text)
+    raw_text = Column(Text)
+    parsed_data = Column(JSON)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    position = relationship("Position", back_populates="job_descriptions")
+    candidates = relationship("Candidate", back_populates="job_description")
+
+
 class Candidate(Base):
     __tablename__ = "candidates"
 
@@ -40,6 +91,8 @@ class Candidate(Base):
     status = Column(String(20), default="pending")
     source = Column(String(50))
     position = Column(String(100))
+    # 绑定的岗位 JD；同一人投不同岗位按岗位拆成多条候选档案
+    job_description_id = Column(Integer, ForeignKey("job_descriptions.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -50,6 +103,7 @@ class Candidate(Base):
     evaluations = relationship("Evaluation", back_populates="candidate", cascade="all, delete-orphan")
     talent_pool = relationship("TalentPool", back_populates="candidate", uselist=False, cascade="all, delete-orphan")
     workflow_runs = relationship("WorkflowRun", back_populates="candidate", cascade="all, delete-orphan")
+    job_description = relationship("JobDescription", back_populates="candidates")
 
 
 class Resume(Base):
@@ -181,6 +235,8 @@ def _ensure_columns():
     from sqlalchemy import inspect, text
     migrations = {
         "interviews": [("questions", "JSON")],
+        "candidates": [("job_description_id", "INTEGER")],
+        "job_descriptions": [("position_id", "INTEGER")],
     }
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
@@ -195,9 +251,77 @@ def _ensure_columns():
                     print(f"[db] 迁移：{table} 新增列 {col_name}")
 
 
+class LLMCallLog(Base):
+    """LLM 调用埋点：token 用量、耗时、成本、成功/降级状态。
+
+    只记录调用元数据，不落 prompt 全文与模型输出全文——简历含 PII，
+    日志留存应最小化；排查具体内容用 candidate_id 关联业务表。
+    """
+    __tablename__ = "llm_call_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    call_site = Column(String(64), index=True)     # parse_resume / evaluate_skill_match / knowledge_qa …
+    candidate_id = Column(Integer, index=True)     # 非候选人链路可空
+    model = Column(String(64))
+    base_url = Column(String(128))
+    input_tokens = Column(Integer)
+    output_tokens = Column(Integer)
+    cost_usd = Column(Float)
+    latency_ms = Column(Integer)
+    status = Column(String(20))                   # ok / failed / budget_blocked
+    degraded = Column(Boolean, default=False)      # 是否走了 default 兜底分
+    usage_missing = Column(Boolean, default=False)  # 供应商未返回 token 用量
+    prompt_hash = Column(String(64))              # prompt 前 500 字符的 sha256
+    error = Column(Text)
+
+
+_ensure_tables_done = False
+
+
+def ensure_tables() -> None:
+    """确保所有表存在（幂等、轻量）。
+
+    create_all 原先只在 init_db() 里调用，导致不经应用启动的入口
+    （评测脚本、CLI 工具）写埋点时会因 llm_call_logs 不存在而静默失败。
+    这里提供可独立调用的建表入口，让"记录"不依赖"服务已启动"。
+    """
+    global _ensure_tables_done
+    if _ensure_tables_done:
+        return
+    Base.metadata.create_all(bind=engine)
+    _ensure_tables_done = True
+
+
+def purge_old_llm_logs(days: int = 90) -> int:
+    """清理过期的 LLM 调用日志，返回删除行数。
+
+    日志表会随调用量线性增长，不清理迟早撑爆磁盘。启动时调一次即可。
+    """
+    if days <= 0:
+        return 0
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    db = SessionLocal()
+    try:
+        count = db.query(LLMCallLog).filter(LLMCallLog.created_at < cutoff).delete(
+            synchronize_session=False)
+        db.commit()
+        if count:
+            print(f"[db] 清理 {days} 天前的 LLM 调用日志 {count} 条")
+        return count
+    except Exception as e:
+        db.rollback()
+        print(f"[db] 清理 LLM 调用日志失败: {e}")
+        return 0
+    finally:
+        db.close()
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     _ensure_columns()
+    purge_old_llm_logs(days=settings.LLM_LOG_RETENTION_DAYS)
 
     import bcrypt
 

@@ -43,6 +43,8 @@ class CandidateCreate(BaseModel):
     phone: Optional[str] = None
     source: Optional[str] = None
     position: Optional[str] = None
+    # 绑定的岗位 JD；人岗匹配强制依赖它，未绑定时不允许启动 AI 评估
+    job_description_id: Optional[int] = None
 
 
 class CandidateUpdate(BaseModel):
@@ -52,6 +54,7 @@ class CandidateUpdate(BaseModel):
     status: Optional[str] = None
     source: Optional[str] = None
     position: Optional[str] = None
+    job_description_id: Optional[int] = None
 
 
 class CandidateResponse(BaseModel):
@@ -63,11 +66,96 @@ class CandidateResponse(BaseModel):
     status: str
     source: Optional[str]
     position: Optional[str]
+    job_description_id: Optional[int]
     created_at: datetime
     updated_at: datetime
 
     class Config:
         from_attributes = True
+
+
+# ---------------------------------------------------------------- 岗位
+
+class PositionCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=100)
+    department: Optional[str] = Field(None, max_length=100)
+    location: Optional[str] = Field(None, max_length=100)
+    headcount: Optional[int] = None
+    description: Optional[str] = None
+
+
+class PositionUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=100)
+    department: Optional[str] = Field(None, max_length=100)
+    location: Optional[str] = Field(None, max_length=100)
+    headcount: Optional[int] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+class PositionResponse(BaseModel):
+    id: int
+    title: str
+    department: Optional[str]
+    location: Optional[str]
+    headcount: Optional[int]
+    description: Optional[str]
+    status: str
+    jd_count: int = 0
+    active_jd_count: int = 0
+    candidate_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ---------------------------------------------------------------- 岗位 JD
+
+class JobDescriptionCreate(BaseModel):
+    position_id: int
+    title: str = Field(..., min_length=1, max_length=100)
+    department: Optional[str] = Field(None, max_length=100)
+    raw_text: Optional[str] = None
+
+
+class JobDescriptionUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=100)
+    department: Optional[str] = Field(None, max_length=100)
+    raw_text: Optional[str] = None
+    # 人工核对后修正的结构化画像
+    parsed_data: Optional[Dict[str, Any]] = None
+
+
+class JobDescriptionResponse(BaseModel):
+    id: int
+    position_id: Optional[int]
+    title: str
+    department: Optional[str]
+    status: str
+    parse_status: str
+    parse_error: Optional[str]
+    raw_text: Optional[str]
+    parsed_data: Optional[Dict[str, Any]]
+    candidate_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ---------------------------------------------------------------- 人工复核
+
+class ReviewDecision(BaseModel):
+    """人工复核裁决：不重跑 LLM，直接改写终局状态。
+
+    重跑会引入二次不可复现——这正是本次改造要消除的问题。
+    """
+    decision: str = Field(..., pattern="^(approve|reject)$",
+                          description="approve=通过录用，reject=淘汰")
+    note: Optional[str] = None
 
 
 class ResumeCreate(BaseModel):
