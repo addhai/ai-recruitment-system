@@ -185,22 +185,31 @@ GitHub Actions（`.github/workflows/ci.yml`）在每次 `push` / `pull_request` 
 
 ### 成本预算
 
+模型与单价**优先在界面配置**（系统设置 → 模型配置，仅管理员），下列 `.env` 项作为兜底默认值：
+
 ```bash
-LLM_INPUT_PRICE_PER_MILLION=0     # 单位：美元/百万 token，按供应商报价填
+LLM_MODEL=deepseek-flash            # 兜底模型名；界面配置优先
+LLM_INPUT_PRICE_PER_MILLION=0       # 单位：LLM_PRICE_CURRENCY/百万 token，按供应商报价填
 LLM_OUTPUT_PRICE_PER_MILLION=0
+LLM_PRICE_CURRENCY=CNY              # 计价币种，预算上限必须与它同币种
+LLM_PEAK_MULTIPLIER=1.0             # 高峰价倍数；DeepSeek 官方为 2
 LLM_BUDGET_ENABLED=true
-LLM_BUDGET_PERIOD=daily           # daily | monthly
-LLM_BUDGET_USD=5.0
-LLM_BUDGET_ACTION=halt            # halt=停止调用并转人工 / warn=仅告警
+LLM_BUDGET_PERIOD=daily             # daily | monthly
+LLM_BUDGET_AMOUNT=5.0               # 预算上限，币种同 LLM_PRICE_CURRENCY
+LLM_BUDGET_ACTION=halt              # halt=停止调用并转人工 / warn=仅告警
 LLM_LOG_RETENTION_DAYS=90
 ```
+
+**币种口径必须一致**：成本由「token × 单价」折算，单价是什么币种，预算上限和界面展示
+就必须是同一币种。DeepSeek 报价为人民币，故默认 `LLM_PRICE_CURRENCY=CNY`。
+旧字段名 `LLM_BUDGET_USD` 仍被识别（显式设置时优先），仅为兼容既有部署。
 
 超限行为（`halt`）：停止后续 LLM 调用，候选人转入「待人工评估」（`pending_manual`），
 **不产出任何招聘决策**；中断前已算出的评分保留不回滚——预算耗尽不是数据错误，
 已花钱得到的结论应当留下。`budget_halted` 不算活跃运行，提高预算后可直接重跑。
 
 **单价未配置时成本恒为 0，预算保护会自动跳过**（宁可不做保护，也不能因为忘配
-价格就把业务卡死）。成本页会显式提示这一点。
+价格就把业务卡死）。成本页与模型配置页都会显式提示这一点。
 
 ## LLM 质量回归评测
 

@@ -14,6 +14,9 @@ __pycache__/
 .pytest_cache/
 .venv/
 .env.*
+# 例外：配置模板只含占位值，必须进版本库，
+# 否则 README 里的 `cp .env.example .env` 在全新克隆上直接失败。
+!.env.example
 docker-compose.override.yml
 
 # agent 工作记忆目录(不含密钥，但属内部工作区，不进作品集)
