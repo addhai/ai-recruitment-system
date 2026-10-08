@@ -2,10 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Search, Filter, FileText, Eye, Trash2, UploadCloud, Loader2 } from 'lucide-react';
 import { getCandidates, createCandidate, deleteCandidate, uploadResume } from '../services/candidates';
-import type { Candidate } from '../types';
+import { getJobDescriptions } from '../services/jobDescriptions';
+import { getPositions } from '../services/positions';
+import type { Candidate, JobDescription, Position } from '../types';
 
 const Candidates: React.FC = () => {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [jobDescriptions, setJobDescriptions] = useState<JobDescription[]>([]);
+  const [positions, setPositions] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -16,6 +20,7 @@ const Candidates: React.FC = () => {
     phone: '',
     position: '',
     source: '',
+    job_description_id: '' as string,
   });
   // 新增：上传简历相关状态
   const [createdCandidateId, setCreatedCandidateId] = useState<number | null>(null);
@@ -60,9 +65,22 @@ const Candidates: React.FC = () => {
     fetchData();
   }, [debouncedSearch]);
 
+  // 岗位 JD 下拉：人岗匹配强制依赖已启用的 JD，只有 active 的能被绑定
+  useEffect(() => {
+    Promise.all([getJobDescriptions({ status: 'active' }), getPositions()])
+      .then(([jds, poss]) => {
+        setJobDescriptions(jds);
+        setPositions(poss);
+      })
+      .catch(() => {
+        setJobDescriptions([]);
+        setPositions([]);
+      });
+  }, [showModal]);
+
   const resetModal = () => {
     setShowModal(false);
-    setNewCandidate({ name: '', email: '', phone: '', position: '', source: '' });
+    setNewCandidate({ name: '', email: '', phone: '', position: '', source: '', job_description_id: '' });
     setCreatedCandidateId(null);
     setResumeFile(null);
     setUploadResult(null);
@@ -73,7 +91,12 @@ const Candidates: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const created = await createCandidate(newCandidate);
+      const created = await createCandidate({
+        ...newCandidate,
+        job_description_id: newCandidate.job_description_id
+          ? Number(newCandidate.job_description_id)
+          : undefined,
+      });
       setCreatedCandidateId(created.id);
       // 刷新列表
       const data = await getCandidates({ search: debouncedSearch });
@@ -309,6 +332,55 @@ const Candidates: React.FC = () => {
                   onChange={(e) => setNewCandidate({ ...newCandidate, position: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  岗位 JD
+                  <span className="text-xs text-slate-400 ml-2">人岗匹配的依据，绑定后上传简历才会自动跑 AI 评估</span>
+                </label>
+                <select
+                  value={newCandidate.job_description_id}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const jd = jobDescriptions.find((x) => String(x.id) === v);
+                    setNewCandidate({
+                      ...newCandidate,
+                      job_description_id: v,
+                      // 选 JD 时顺手带出岗位名，省一次手填
+                      position: jd ? jd.title : newCandidate.position,
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">不绑定（将无法启动 AI 评估）</option>
+                  {positions.map((p) => {
+                    const list = jobDescriptions.filter((jd) => jd.position_id === p.id);
+                    if (list.length === 0) return null;
+                    return (
+                      <optgroup key={p.id} label={p.title}>
+                        {list.map((jd) => (
+                          <option key={jd.id} value={jd.id}>
+                            {jd.title}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                  {/* 兼容尚未挂到岗位的历史 JD */}
+                  {jobDescriptions.some((jd) => !positions.some((p) => p.id === jd.position_id)) &&
+                    jobDescriptions
+                      .filter((jd) => !positions.some((p) => p.id === jd.position_id))
+                      .map((jd) => (
+                        <option key={jd.id} value={jd.id}>
+                          {jd.title}（未归属岗位）
+                        </option>
+                      ))}
+                </select>
+                {jobDescriptions.length === 0 && (
+                  <p className="text-xs text-amber-600 mt-1">
+                    还没有已启用的岗位 JD。请先到「岗位 JD」页面创建、解析并启用后再绑定。
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">来源</label>

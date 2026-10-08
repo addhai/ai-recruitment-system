@@ -11,17 +11,23 @@ import {
   Settings,
   LogOut,
   Briefcase,
+  FileStack,
+  ClipboardCheck,
+  Coins,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const menuItems = [
   { path: '/', icon: LayoutDashboard, label: '数据仪表盘', roles: ['admin', 'hr', 'interviewer', 'viewer'] },
+  { path: '/positions', icon: FileStack, label: '岗位管理', roles: ['admin', 'hr'] },
   { path: '/candidates', icon: Users, label: '候选人管理', roles: ['admin', 'hr', 'interviewer'] },
+  { path: '/reviews', icon: ClipboardCheck, label: '待人工复核', roles: ['admin', 'hr'] },
   { path: '/interviews', icon: CalendarDays, label: '面试管理', roles: ['admin', 'hr', 'interviewer'] },
   { path: '/questionnaires', icon: FileQuestion, label: '问卷管理', roles: ['admin', 'hr'] },
   { path: '/evaluations', icon: ClipboardList, label: '评估管理', roles: ['admin', 'hr', 'interviewer'] },
   { path: '/talent-pool', icon: Database, label: '人才池', roles: ['admin', 'hr'] },
   { path: '/knowledge-base', icon: BookOpen, label: '知识库', roles: ['admin', 'hr', 'interviewer', 'viewer'] },
+  { path: '/llm-cost', icon: Coins, label: 'AI 成本', roles: ['admin', 'hr'] },
   { path: '/settings', icon: Settings, label: '系统设置', roles: ['admin'] },
 ];
 

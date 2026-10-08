@@ -1,0 +1,37 @@
+岗位名称：AI 应用开发实习生（Agent 方向）
+
+岗位职责：
+1. 参与公司企业级 AI 应用项目的开发与交付，包括 AI Agent、RAG 知识库、智能客服、企业内部管理系统及自动化工作流等
+2. 使用 Python 参与 AI 应用及后端功能开发
+3. 调用 DeepSeek、OpenAI、Gemini、Claude、Qwen 等大模型 API
+4. 参与 AI Agent、RAG、Function Calling、Workflow 等功能开发与调试
+5. 使用 FastAPI 等框架完成简单 API 接口及业务逻辑
+6. 参与 PDF、Excel、图片、企业文档等数据处理与结构化提取
+7. 根据项目需要与简单的 React / Vue 前端页面开发
+8. 参与数据库、接口联调、功能测试、Bug 修复及基础部署
+9. 使用 Codex、Claude Code、Cursor 等 AI Coding 工具辅助开发，提高研发效率
+
+任职要求：
+1. 在校生或应届生，计算机、软件工程、人工智能等相关专业优先，专业不作为硬性限制
+2. 有 Python 基础，能够看懂、修改和调试 Python 代码
+3. 了解 HTTP、API、JSON 等基础开发概念
+4. 对大模型、AI Agent、RAG 等 AI 应用开发有兴趣
+5. 会使用 Git 或愿意快速学习
+6. 能够使用 AI Coding 工具辅助开发，但需要能理解、修改和 Debug AI 生成的代码
+7. 学习能力和动手能力强，遇到陌生技术愿意主动查阅资料并解决问题
+
+加分项：
+1. 使用过 FastAPI / Flask
+2. 调用过大模型 API
+3. 做过 AI Agent / RAG 项目
+4. 会 MySQL / PostgreSQL
+5. 会 React / Vue
+6. 使用过 Docker / Linux
+7. 熟悉 Codex、Claude Code、Cursor 等 AI Coding 工具
+8. 有 GitHub / Gitee 项目
+9. 有自己独立完成的 Demo、课程项目、比赛项目或个人产品
+
+我们看重什么：
+相比工作经验和学习经历，我们更关注动手能力、学习速度、AI Coding 能力和真实项目能力。
+不要求有大模型训练、模型微调或算法研究经验。
+如果你喜欢折腾 AI，有自己的项目，或者经常利用 AI 把想法真正做成可以运行的软件，非常欢迎投递。

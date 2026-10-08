@@ -12,6 +12,9 @@ import Evaluations from './pages/Evaluations';
 import TalentPool from './pages/TalentPool';
 import KnowledgeBase from './pages/KnowledgeBase';
 import Settings from './pages/Settings';
+import JobDescriptions from './pages/Positions';
+import ReviewQueue from './pages/ReviewQueue';
+import LlmCost from './pages/LlmCost';
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { token, isLoading } = useAuth();
@@ -51,6 +54,26 @@ function AppRoutes() {
           <ProtectedRoute>
             <Layout>
               <Candidates />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/positions"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <JobDescriptions />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/reviews"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <ReviewQueue />
             </Layout>
           </ProtectedRoute>
         }
@@ -111,6 +134,16 @@ function AppRoutes() {
           <ProtectedRoute>
             <Layout>
               <KnowledgeBase />
+            </Layout>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/llm-cost"
+        element={
+          <ProtectedRoute>
+            <Layout>
+              <LlmCost />
             </Layout>
           </ProtectedRoute>
         }

@@ -4,6 +4,23 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  # 评测集手动触发：不进日常构建。
+  # 理由：每次全量评测要跑上百次真实 LLM 调用，有固定成本；
+  # 且断言虽为硬不变量，运行本身仍依赖外部模型可用性，不适合作为每次 push 的门禁。
+  workflow_dispatch:
+    inputs:
+      run_evals:
+        description: 是否运行 LLM 质量回归评测（会产生真实 API 成本）
+        type: boolean
+        default: false
+      eval_cases:
+        description: 只跑指定用例（名称子串，空格分隔；留空跑全部）
+        type: string
+        default: ""
+      eval_repeat:
+        description: 每条用例重复次数（>1 用于观察数值波动）
+        type: string
+        default: "1"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -52,3 +69,41 @@ jobs:
         uses: docker/setup-docker-action@v4
       - name: Build images
         run: docker compose build
+
+  # 手动触发的 LLM 质量回归评测（防退化）。
+  # 需要仓库配置 secrets：LLM_API_KEY / LLM_API_BASE / LLM_MODEL /
+  # EMBEDDING_API_KEY / EMBEDDING_API_BASE / EMBEDDING_MODEL
+  llm-eval:
+    name: LLM Quality Regression (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_evals }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run eval suite
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
+          EMBEDDING_API_BASE: ${{ secrets.EMBEDDING_API_BASE }}
+          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+          SECRET_KEY: eval-secret
+        run: |
+          ARGS=""
+          if [ -n "${{ inputs.eval_cases }}" ]; then
+            ARGS="--cases ${{ inputs.eval_cases }}"
+          fi
+          python tests/eval/run_eval.py $ARGS --repeat ${{ inputs.eval_repeat }} --out eval_report.json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-eval-report
+          path: eval_report.json
+          if-no-files-found: warn

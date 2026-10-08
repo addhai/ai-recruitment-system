@@ -21,6 +21,7 @@ export const createCandidate = async (data: {
   phone?: string;
   source?: string;
   position?: string;
+  job_description_id?: number;
 }): Promise<Candidate> => {
   return apiRequest<Candidate>('/candidates/', {
     method: 'POST',
