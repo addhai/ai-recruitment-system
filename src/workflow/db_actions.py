@@ -19,6 +19,7 @@ from src.models.database import (
     Evaluation,
     TalentPool,
     User,
+    JobDescription,
 )
 
 
@@ -35,6 +36,39 @@ def session_scope():
         db.close()
 
 
+# ---------------------------------------------------------------- 岗位 JD
+
+def get_job_description(jd_id: Optional[int]) -> Optional[Dict[str, Any]]:
+    """按 id 取岗位 JD（不校验状态）"""
+    if not jd_id:
+        return None
+    with session_scope() as db:
+        jd = db.query(JobDescription).filter(JobDescription.id == jd_id).first()
+        if not jd:
+            return None
+        return {
+            "id": jd.id,
+            "title": jd.title,
+            "status": jd.status,
+            "parse_status": jd.parse_status,
+            "parsed_data": jd.parsed_data,
+        }
+
+
+def get_active_job_description(jd_id: Optional[int]) -> Optional[Dict[str, Any]]:
+    """取可用于匹配的岗位 JD：必须已启用(status=active)且解析成功。
+
+    人岗匹配强制依赖它——此前用 candidate.position 这个岗位名字符串当依据，
+    等于拿简历自述的职责去匹配简历自己。
+    """
+    jd = get_job_description(jd_id)
+    if not jd or jd["status"] != "active" or jd["parse_status"] != "parsed":
+        return None
+    if not jd["parsed_data"]:
+        return None
+    return jd
+
+
 # ---------------------------------------------------------------- 候选人/简历
 
 def get_candidate(candidate_id: int) -> Optional[Dict[str, Any]]:
@@ -48,6 +82,7 @@ def get_candidate(candidate_id: int) -> Optional[Dict[str, Any]]:
             "position": c.position,
             "status": c.status,
             "resume_text": c.resume_text,
+            "job_description_id": c.job_description_id,
         }
 
 

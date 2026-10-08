@@ -25,7 +25,7 @@ def _gen(state, round_no):
 
 def _patch_llm(monkeypatch, return_value="__default__"):
     """return_value="__default__" 时模拟 LLM 失败的真实行为：_llm_json 返回 default"""
-    async def _fake(prompt, variables, default=None):
+    async def _fake(prompt, variables, default=None, *, call_site=None, **__):
         return default if return_value == "__default__" else return_value
     monkeypatch.setattr(rg, "_llm_json", _fake)
 

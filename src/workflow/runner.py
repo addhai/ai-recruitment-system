@@ -22,7 +22,9 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from src.config import settings
 from src.models.database import SessionLocal, Candidate, WorkflowRun
-from src.workflow.recruitment_graph import build_recruitment_graph
+from src.workflow import db_actions
+from src.services import budget
+from src.workflow.recruitment_graph import build_recruitment_graph, compute_overall
 from src.sse.notification import notify_workflow_progress
 from src.safety import OutputGuard
 
@@ -99,10 +101,30 @@ def _get_active_run(db, candidate_id: int) -> Optional[WorkflowRun]:
 
 def _build_result(values: Dict[str, Any], candidate: Candidate) -> Dict[str, Any]:
     """组装前端兼容的最终结果结构"""
-    skill = int(values.get("skill_match_score") or 0)
-    culture = int(values.get("culture_match_score") or 0)
-    exp = int(values.get("experience_score") or skill)
-    edu = int(values.get("education_score") or skill)
+    unconstrained = values.get("unconstrained_dimensions") or []
+    unconstrained = list(unconstrained)
+
+    def _score(key: str, fallback: Optional[float] = None) -> Optional[int]:
+        """岗位未设限、或流程没走到这一步时返回 None，而不是编一个分数出来。
+
+        旧实现在此处回落到技能分，会让"从未评估过的维度"显示成实打实的分数，
+        与 compute_overall 正确排除它的做法自相矛盾——展示和算分必须一致。
+        """
+        v = values.get(key)
+        if v is None:
+            return None
+        return int(v)
+
+    def _text(label: str, key: str) -> str:
+        if key in unconstrained:
+            return f"{label}：岗位未设限，不参与评分"
+        value = _score(key)
+        return f"{label}{value} 分" if value is not None else f"{label}：未评估"
+
+    skill = _score("skill_match_score")
+    culture = _score("culture_match_score")
+    exp = _score("experience_score")
+    edu = _score("education_score")
     overall = int(values.get("overall_score") or 0)
     decision = values.get("final_decision") or "待定"
     recommendation = values.get("final_recommendation") or {}
@@ -111,6 +133,10 @@ def _build_result(values: Dict[str, Any], candidate: Candidate) -> Dict[str, Any
         "candidate_id": candidate.id,
         "candidate_name": candidate.name,
         "position": candidate.position,
+        "job_description_id": candidate.job_description_id,
+        "jd_source": values.get("jd_source"),
+        # 评分口径版本：提示词与权重变更后，新旧分数不可比，回溯时需要区分
+        "scoring_version": settings.SCORING_VERSION,
         "final_decision": decision,
         "overall_score": overall,
         "skill_match_score": skill,
@@ -119,13 +145,18 @@ def _build_result(values: Dict[str, Any], candidate: Candidate) -> Dict[str, Any
         "culture_match_score": culture,
         "questionnaire_score": int(values.get("questionnaire_score") or 0),
         "interview_scores": values.get("interview_scores") or [],
+        "unconstrained_dimensions": unconstrained,
+        "needs_review": bool(values.get("needs_review")),
+        "review_reason": values.get("review_reason"),
+        "review_detail": values.get("review_detail"),
+        "assessed_dimensions": recommendation.get("assessed_dimensions") or [],
         "workflow_progress": 100,
         "current_step": "completed",
         "analysis": {
-            "skills_analysis": f"技能匹配度 {skill} 分",
-            "experience_analysis": f"经验匹配度 {exp} 分",
-            "education_analysis": f"教育匹配度 {edu} 分",
-            "culture_analysis": f"文化契合度 {culture} 分",
+            "skills_analysis": _text("技能匹配度", "skill_match_score"),
+            "experience_analysis": _text("经验匹配度", "experience_score"),
+            "education_analysis": _text("教育匹配度", "education_score"),
+            "culture_analysis": _text("文化契合度", "culture_match_score"),
             "recommendation": decision,
             "final_recommendation": recommendation,
         },
@@ -177,13 +208,25 @@ async def _drive(graph, config, workflow_run_id: int, candidate_id: int,
                     "values": final_values}
         return {"status": "completed", "values": final_values}
 
+    except budget.BudgetExceeded as e:
+        # 预算耗尽：必须在兜底 except Exception 之前精确捕获。
+        # 此时后续节点不再执行，但中断前已写入 Evaluation 的评分保留——
+        # 预算耗尽不是数据错误，已花钱得到的结论应当留下。
+        print(f"[workflow-runner] 成本预算耗尽，工作流中止: {e}")
+        return {"status": "budget_exhausted", "error": str(e), "values": final_values}
     except Exception as e:
         print(f"[workflow-runner] 驱动失败: {e}")
         return {"status": "error", "error": str(e), "values": final_values}
 
 
-async def start_workflow(candidate_id: int, position_requirements: str = "") -> Dict[str, Any]:
-    """启动一次全新的招聘工作流"""
+async def start_workflow(candidate_id: int, position_requirements: str = "",
+                         job_description_id: Optional[int] = None) -> Dict[str, Any]:
+    """启动一次全新的招聘工作流。
+
+    强制绑定 JD：没有 active 且解析成功的岗位 JD 就直接返回 error。
+    此前回退到 candidate.position（岗位名字符串），等于拿简历自述的职责
+    去匹配简历自己，是自我印证而非真实的人岗匹配。
+    """
     started_at = time.time()
     graph = await get_graph()
 
@@ -198,6 +241,13 @@ async def start_workflow(candidate_id: int, position_requirements: str = "") -> 
                     "run_status": active.status, "progress": active.progress,
                     "current_step": active.current_step}
 
+        # 岗位 JD 必须在创建 run 之前校验：没有它就不该留下"已启动"的运行记录
+        jd_id = job_description_id or candidate.job_description_id
+        jd = db_actions.get_active_job_description(jd_id)
+        if not jd:
+            return {"status": "error",
+                    "error": "未绑定有效岗位 JD（需 status=active 且解析成功），无法启动人岗匹配"}
+
         run = WorkflowRun(candidate_id=candidate_id, status="running", current_step="start", progress=0)
         db.add(run)
         db.commit()
@@ -207,11 +257,13 @@ async def start_workflow(candidate_id: int, position_requirements: str = "") -> 
         resume_text = candidate.resume_text or ""
         position = candidate.position or ""
         thread_id = _new_thread_id()
-        run.results = {"thread_id": thread_id}
+        run.results = {"thread_id": thread_id, "jd_profile": jd.get("parsed_data"),
+                       "scoring_version": settings.SCORING_VERSION}
         db.commit()
 
     # 候选人进入筛选阶段
-    from src.workflow import db_actions
+    # 注意：这里不要写局部 `from src.workflow import db_actions`，
+    # 会把模块级同名导入遮蔽成局部变量，导致上面的 JD 校验抛 UnboundLocalError
     db_actions.set_candidate_status(candidate_id, "screening")
 
     try:
@@ -228,6 +280,9 @@ async def start_workflow(candidate_id: int, position_requirements: str = "") -> 
             "resume_text": resume_text,
             "position_requirements": position_requirements or position,
             "position": position,
+            "job_description_id": jd["id"],
+            "jd_profile": jd.get("parsed_data"),
+            "jd_source": "job_description",
         },
     )
 
@@ -306,6 +361,45 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
                 }.get(wait_type, "等待人工处理"),
             })
 
+        if outcome["status"] == "budget_exhausted":
+            # 转人工：候选人停在"待人工评估"，不产出任何招聘决策。
+            # assessed 让 HR 知道已经评了什么、还差什么。
+            values = outcome.get("values") or {}
+            _overall, assessed = compute_overall(values)
+            db_actions.set_candidate_status(candidate_id, "pending_manual")
+            db_actions.upsert_talent_pool(
+                candidate_id, ["预算暂停", "待人工评估"],
+                f"成本预算耗尽，流程中止于 {values.get('current_step') or '未知环节'}。"
+                f"已完成维度：{', '.join(assessed) or '无'}。请人工评估或提高预算后重跑。",
+            )
+            _update_run(
+                run_id, status="budget_halted",
+                current_step=values.get("current_step") or "budget_halted",
+                results={
+                    "thread_id": thread_id,
+                    "budget_halted": True,
+                    "error": outcome.get("error"),
+                    "assessed_dimensions": assessed,
+                    "scoring_version": settings.SCORING_VERSION,
+                    # 提示 HR 可以直接重跑：budget_halted 不算活跃运行，不会撞 _get_active_run
+                    "can_rerun": True,
+                },
+            )
+            try:
+                from src.sse.notification import notify_budget_halted
+                await notify_budget_halted(candidate_id, candidate_name,
+                                           values.get("current_step") or "未知环节", assessed)
+            except Exception:
+                pass
+            return {
+                "status": "budget_halted",
+                "candidate_id": candidate_id,
+                "budget_halted": True,
+                "error": outcome.get("error"),
+                "assessed_dimensions": assessed,
+                "message": "LLM 成本预算已用尽，流程已中止，请人工评估或在提高预算后重新运行",
+            }
+
         if outcome["status"] == "error":
             _update_run(run_id, status="failed", results={"thread_id": thread_id, "error": outcome.get("error")})
             return {"status": "error", "workflow_run_id": run_id, "error": outcome.get("error")}
@@ -337,13 +431,23 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
 
 
 async def trigger_after_upload(candidate_id: int) -> None:
-    """简历上传后的自动触发入口（BackgroundTasks 调用，异常全部吞掉不影响上传）"""
+    """简历上传后的自动触发入口（BackgroundTasks 调用，异常全部吞掉不影响上传）
+
+    未绑定有效 JD 时不启动：人岗匹配现在强制依赖结构化 JD，
+    没绑定就明确推 jd_missing 通知引导前端补录，而不是静默什么都不发生。
+    """
     if not getattr(settings, "AUTO_START_WORKFLOW", True):
         return
     try:
         with SessionLocal() as db:
             candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
             position = candidate.position if candidate else ""
+            name = candidate.name if candidate else ""
+            jd_id = candidate.job_description_id if candidate else None
+        if not db_actions.get_active_job_description(jd_id):
+            from src.sse.notification import notify_jd_missing
+            await notify_jd_missing(candidate_id, name)
+            return
         await start_workflow(candidate_id, position_requirements=position or "")
     except Exception as e:
         print(f"[workflow-runner] 上传后自动触发工作流失败: {e}")

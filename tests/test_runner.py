@@ -25,11 +25,12 @@ def _fake_graph(monkeypatch):
     monkeypatch.setattr(runner, "get_graph", _get)
 
 
-def _mk_candidate(name="runner测试") -> int:
+def _mk_candidate(name="runner测试", jd_id=None) -> int:
     import uuid
     with SessionLocal() as db:
         # 邮箱加随机后缀：测试库全 session 共享，固定邮箱会撞 UNIQUE 约束
-        c = Candidate(name=name, email=f"{name}-{uuid.uuid4().hex[:8]}@t.com", position="Python工程师")
+        c = Candidate(name=name, email=f"{name}-{uuid.uuid4().hex[:8]}@t.com",
+                      position="Python工程师", job_description_id=jd_id)
         db.add(c)
         db.commit()
         db.refresh(c)
@@ -63,9 +64,31 @@ def test_build_result_structure():
     assert result["candidate_id"] == c.id
     assert result["workflow_progress"] == 100
     assert result["skill_match_score"] == 80
-    assert result["experience_match_score"] == 80  # 缺省回落到技能分
     assert result["final_decision"] == "推荐录用"
     assert "completed_at" in result
+    # 未评估的维度必须是 None，不能回落到技能分——
+    # 展示一个从未考过的 80 分，与 compute_overall 排除它的做法自相矛盾
+    assert result["experience_match_score"] is None
+    assert "未评估" in result["analysis"]["experience_analysis"]
+
+
+def test_build_result_marks_unconstrained_dimensions():
+    """岗位未设限的维度要在结果里标出来，前端据此说明是「不参与评分」而非「未评估」"""
+    with SessionLocal() as db:
+        c = db.query(Candidate).first()
+        if not c:
+            cid = _mk_candidate()
+            c = db.query(Candidate).filter(Candidate.id == cid).first()
+    result = runner._build_result(
+        {"skill_match_score": 80, "experience_score": 75,
+         "culture_match_score": None, "overall_score": 78,
+         "unconstrained_dimensions": ["culture_match_score"],
+         "final_decision": "推荐录用", "final_recommendation": {}},
+        c,
+    )
+    assert result["culture_match_score"] is None
+    assert result["unconstrained_dimensions"] == ["culture_match_score"]
+    assert "岗位未设限" in result["analysis"]["culture_analysis"]
 
 
 def test_sanitize_masks_phone():
@@ -174,21 +197,96 @@ def test_finalize_completed_writes_full_result():
         assert run.results["final_decision"] == "推荐录用"
 
 
+def _mk_active_jd() -> int:
+    """建一条可用的 active JD（解析成功），供强制绑定的路径使用"""
+    from src.models.database import JobDescription
+    with SessionLocal() as db:
+        jd = JobDescription(
+            title="Python工程师", department="技术部", status="active", parse_status="parsed",
+            raw_text="精通 Python",
+            parsed_data={"required_skills": [{"skill": "Python", "evidence": "精通 Python"}]},
+        )
+        db.add(jd)
+        db.commit()
+        db.refresh(jd)
+        return jd.id
+
+
+def test_start_workflow_requires_active_jd(monkeypatch):
+    """回归：未绑定 active JD 时 start_workflow 直接返回 error，不创建运行记录
+
+    同时守住 db_actions 的遮蔽陷阱：函数内若残留局部
+    `from src.workflow import db_actions`，模块级导入会被遮蔽，
+    JD 校验会抛 UnboundLocalError，被 trigger_after_upload 的兜底吞掉，
+    表现为"上传成功但工作流静默不跑"。
+    """
+    cid = _mk_candidate("未绑定JD")
+    out = asyncio.run(runner.start_workflow(cid))
+    assert out["status"] == "error"
+    assert "岗位 JD" in out["error"]
+    with SessionLocal() as db:
+        assert db.query(WorkflowRun).filter(WorkflowRun.candidate_id == cid).count() == 0
+
+
+def test_start_workflow_accepts_active_jd(monkeypatch):
+    """绑定 active JD 后应通过 JD 门禁（checkpointer 用假图避免真实初始化）"""
+    driven = {}
+
+    async def _fake_drive(graph, config, run_id, cid, name, start_input=None, resume_value=None):
+        driven["jd_profile"] = start_input.get("jd_profile")
+        driven["job_description_id"] = start_input.get("job_description_id")
+        return {"status": "error", "error": "驱动已到达（测试不关心图执行）"}
+
+    monkeypatch.setattr(runner, "_drive", _fake_drive)
+    jd_id = _mk_active_jd()
+    cid = _mk_candidate("已绑定JD", jd_id)
+    out = asyncio.run(runner.start_workflow(cid))
+    assert driven["job_description_id"] == jd_id, "应把绑定的 JD 注入工作流 state"
+    assert driven["jd_profile"], "jd_profile 必须传入节点，否则匹配又会退回岗位名"
+
+
 # ---------------------------------------------------------------- 自动触发
 def test_trigger_after_upload_respects_flag(monkeypatch):
     called = {"n": 0}
 
-    async def _fake_start(cid, position_requirements=""):
+    async def _fake_start(cid, position_requirements="", job_description_id=None):
         called["n"] += 1
 
     monkeypatch.setattr(runner, "start_workflow", _fake_start)
     monkeypatch.setattr(runner.settings, "AUTO_START_WORKFLOW", False)
-    asyncio.run(runner.trigger_after_upload(1))
+    jd_id = _mk_active_jd()
+    asyncio.run(runner.trigger_after_upload(_mk_candidate("开关关闭", jd_id)))
     assert called["n"] == 0
 
     monkeypatch.setattr(runner.settings, "AUTO_START_WORKFLOW", True)
-    asyncio.run(runner.trigger_after_upload(1))
+    asyncio.run(runner.trigger_after_upload(_mk_candidate("开关开启", jd_id)))
     assert called["n"] == 1
+
+
+def test_trigger_after_upload_skips_when_no_active_jd(monkeypatch):
+    """回归：强制绑定 JD 后，没绑定岗位的候选人上传简历不再自动跑工作流。
+
+    此前无论有没有 JD 都会自动触发，匹配依据只是岗位名字符串。
+    现在应改为推送 jd_missing 通知引导前端补录。
+    """
+    called = {"n": 0}
+
+    async def _fake_start(cid, position_requirements="", job_description_id=None):
+        called["n"] += 1
+
+    notified = {}
+
+    async def _fake_notify(cid, name):
+        notified["called"] = True
+
+    monkeypatch.setattr(runner, "start_workflow", _fake_start)
+    monkeypatch.setattr(runner.settings, "AUTO_START_WORKFLOW", True)
+    monkeypatch.setattr("src.sse.notification.notify_jd_missing", _fake_notify)
+
+    asyncio.run(runner.trigger_after_upload(_mk_candidate("无JD候选人", None)))
+
+    assert called["n"] == 0, "未绑定 JD 时不应启动工作流"
+    assert notified.get("called") is True, "应推送 jd_missing 通知引导绑定 JD"
 
 
 def test_trigger_after_upload_swallows_exception(monkeypatch):

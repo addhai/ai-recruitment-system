@@ -32,13 +32,16 @@ class InputGuard:
         r"忘掉(你的|之前|所有)(的)?(指令|设定|身份|角色)",
         r"你现在是(一个|一名)?",
         r"你不再是(招聘|HR|人事|面试|助手)",
-        r"请?扮演(一个|一名)?",
+        r"扮演(?:一个|一名)?(?:翻译器|黑客|机器人|专家|助手|客服)",
+        r"请扮演",
         r"进入(角色模式|角色|模式).{0,10}[:：]",  # 需带冒号指令，避免误伤"快速进入角色"
         r"输出(你的)?系统(提示词|指令|设定|消息)",
         r"泄露(你的)?(系统|初始|原始)(提示词|指令|prompt)",
         r"给(你|我)(新的|以下)(指令|任务|规则)[:：]",
         r"解除(你的)?(限制|安全|护栏|过滤)",
-        r"越(狱|权)",
+        r"越狱",  # 只拦 jailbreak。"越权"是信息安全基础术语（越权防护/权限边界），
+                  # 简历、面试反馈、问卷答案里属正常业务用语，命中会让信息安全岗
+                  # 候选人提交问卷时直接被 400，工作流卡死
         r"开发者模式",
         r"role\s*[:：]\s*system",
     ]
@@ -101,6 +104,13 @@ class OutputGuard:
     邮箱在招聘场景是必要联系信息，不予脱敏。
     """
 
+    # 邮箱作为独立 PII 单元：整串保护，不参与下面身份证/手机号/银行卡的匹配。
+    # 国内简历的邮箱前缀常常就是手机号（17307179854@163.com），
+    # 若先跑手机号规则，会被撕成 "[手机号已隐藏]@163.com"——
+    # 邮箱既不可用，又不算真正脱敏，属于两头不讨好。
+    EMAIL_PATTERN = r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9\-]+(?:\.[A-Za-z0-9\-]+)*\.[A-Za-z]{2,}"
+    _EMAIL_SLOT = "\x00arsmail{index}\x00"
+
     PII_PATTERNS = [
         # 身份证号：17位数字 + 数字/X（用断言防止手机号/卡号部分匹配）
         (r"(?<![0-9A-Za-z])\d{17}[0-9Xx](?![0-9A-Za-z])", "[身份证号已隐藏]"),
@@ -111,13 +121,32 @@ class OutputGuard:
     ]
 
     @classmethod
+    def _protect_emails(cls, text: str):
+        """把邮箱替换成占位符，返回 (占位后的文本, 邮箱列表)"""
+        emails = []
+
+        def _repl(m):
+            emails.append(m.group(0))
+            return cls._EMAIL_SLOT.format(index=len(emails) - 1)
+
+        return re.sub(cls.EMAIL_PATTERN, _repl, text), emails
+
+    @classmethod
+    def _restore_emails(cls, text: str, emails) -> str:
+        """把占位符换回原始邮箱"""
+        for i, email in enumerate(emails):
+            text = text.replace(cls._EMAIL_SLOT.format(index=i), email)
+        return text
+
+    @classmethod
     def sanitize(cls, text: str) -> str:
-        """过滤字符串中的 PII"""
+        """过滤字符串中的 PII（邮箱整体保留）"""
         if not text or not isinstance(text, str):
             return text
+        text, emails = cls._protect_emails(text)
         for pattern, replacement in cls.PII_PATTERNS:
             text = re.sub(pattern, replacement, text)
-        return text
+        return cls._restore_emails(text, emails)
 
     @classmethod
     def sanitize_obj(cls, obj: Any) -> Any:
