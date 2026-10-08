@@ -1,7 +1,7 @@
 import asyncio
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_all_authenticated
 from src.sse.notification import subscribe, unsubscribe
 
 router = APIRouter(prefix="/sse", tags=["sse"])
@@ -30,7 +30,7 @@ async def event_stream(user_id: str):
 
 
 @router.get("/notifications")
-async def stream_notifications(current_user=Depends(get_current_user)):
+async def stream_notifications(current_user=Depends(require_all_authenticated)):
     return StreamingResponse(
         event_stream(str(current_user.id)),
         media_type="text/event-stream"

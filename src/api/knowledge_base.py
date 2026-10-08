@@ -5,7 +5,7 @@ from typing import List, Optional
 from src.rag.knowledge_base import (
     query_knowledge_base_async, add_document, get_all_documents,
 )
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_all_authenticated
 from src.safety.guard import InputGuard
 
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
@@ -21,12 +21,12 @@ class DocumentCreate(BaseModel):
 
 
 @router.get("/documents")
-def list_documents(current_user=Depends(get_current_user)):
+def list_documents(current_user=Depends(require_all_authenticated)):
     return get_all_documents()
 
 
 @router.post("/query")
-async def query_knowledge(body: KnowledgeQuery, current_user=Depends(get_current_user)):
+async def query_knowledge(body: KnowledgeQuery, current_user=Depends(require_all_authenticated)):
     # 输入护栏：拦截提示注入与危险内容
     safe, reason = InputGuard.check(body.query)
     if not safe:
@@ -40,7 +40,7 @@ async def query_knowledge(body: KnowledgeQuery, current_user=Depends(get_current
 
 
 @router.post("/documents")
-async def add_new_document(body: DocumentCreate, current_user=Depends(get_current_user)):
+async def add_new_document(body: DocumentCreate, current_user=Depends(require_all_authenticated)):
     safe, reason = InputGuard.check(body.title + "\n" + body.content)
     if not safe:
         from fastapi import HTTPException

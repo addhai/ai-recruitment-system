@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session
 from typing import List
 from src.models.database import get_db, Evaluation
 from src.models.schemas import EvaluationCreate, EvaluationResponse
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_hr_admin, require_hr_admin_interviewer
 from src.evaluation import evaluation_tracker
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 
 
 @router.get("/stats")
-def get_workflow_evaluation_stats(current_user=Depends(get_current_user)):
+def get_workflow_evaluation_stats(current_user=Depends(require_hr_admin_interviewer)):
     """获取 AI 工作流评估统计摘要（基于内存追踪器）"""
     return evaluation_tracker.stats()
 
@@ -18,7 +18,7 @@ def get_workflow_evaluation_stats(current_user=Depends(get_current_user)):
 @router.get("/stats/records")
 def get_workflow_evaluation_records(
     limit: int = 20,
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin_interviewer)
 ):
     """获取最近的 AI 工作流评估记录"""
     return evaluation_tracker.get_records(limit=limit)
@@ -29,7 +29,7 @@ def list_evaluations(
     candidate_id: int = None,
     dimension: str = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin_interviewer)
 ):
     query = db.query(Evaluation)
 
@@ -42,7 +42,7 @@ def list_evaluations(
 
 
 @router.get("/{evaluation_id}", response_model=EvaluationResponse)
-def get_evaluation(evaluation_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_evaluation(evaluation_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin_interviewer)):
     evaluation = db.query(Evaluation).filter(Evaluation.id == evaluation_id).first()
     if not evaluation:
         raise HTTPException(status_code=404, detail="Evaluation not found")
@@ -50,7 +50,7 @@ def get_evaluation(evaluation_id: int, db: Session = Depends(get_db), current_us
 
 
 @router.post("/", response_model=EvaluationResponse)
-def create_evaluation(evaluation: EvaluationCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def create_evaluation(evaluation: EvaluationCreate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     new_evaluation = Evaluation(
         candidate_id=evaluation.candidate_id,
         evaluator_id=current_user.id,
@@ -65,7 +65,7 @@ def create_evaluation(evaluation: EvaluationCreate, db: Session = Depends(get_db
 
 
 @router.put("/{evaluation_id}", response_model=EvaluationResponse)
-def update_evaluation(evaluation_id: int, score: int = None, comment: str = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def update_evaluation(evaluation_id: int, score: int = None, comment: str = None, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     e = db.query(Evaluation).filter(Evaluation.id == evaluation_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Evaluation not found")
@@ -81,7 +81,7 @@ def update_evaluation(evaluation_id: int, score: int = None, comment: str = None
 
 
 @router.delete("/{evaluation_id}")
-def delete_evaluation(evaluation_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def delete_evaluation(evaluation_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     e = db.query(Evaluation).filter(Evaluation.id == evaluation_id).first()
     if not e:
         raise HTTPException(status_code=404, detail="Evaluation not found")
@@ -91,7 +91,7 @@ def delete_evaluation(evaluation_id: int, db: Session = Depends(get_db), current
 
 
 @router.get("/candidate/{candidate_id}/summary")
-def get_candidate_evaluation_summary(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_candidate_evaluation_summary(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin_interviewer)):
     evaluations = db.query(Evaluation).filter(Evaluation.candidate_id == candidate_id).all()
     
     if not evaluations:

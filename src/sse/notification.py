@@ -94,11 +94,38 @@ async def notify_hiring_decision(candidate_id: int, decision: str, overall_score
     })
 
 
+async def notify_budget_halted(candidate_id: int, candidate_name: str,
+                               halted_at: str, assessed: list):
+    """成本预算耗尽导致工作流中止，流程转人工。"""
+    await broadcast({
+        "type": "budget_halted",
+        "candidate_id": candidate_id,
+        "candidate_name": candidate_name,
+        "halted_at": halted_at,
+        "assessed_dimensions": assessed or [],
+        "message": "LLM 成本预算已用尽，AI 评估已中止，请人工处理",
+    })
+
+
 async def notify_candidate_added(candidate_id: int, candidate_name: str):
     await broadcast({
         "type": "candidate_added",
         "candidate_id": candidate_id,
         "candidate_name": candidate_name
+    })
+
+
+async def notify_jd_missing(candidate_id: int, candidate_name: str):
+    """简历已上传但未绑定有效岗位 JD，无法启动人岗匹配。
+
+    此前上传后会自动跑工作流，但匹配依据只是岗位名字符串；现在强制绑定 JD，
+    没绑定时明确通知前端引导补录，而不是静默什么都不发生。
+    """
+    await broadcast({
+        "type": "jd_missing",
+        "candidate_id": candidate_id,
+        "candidate_name": candidate_name,
+        "message": "未绑定有效岗位 JD，AI 评估未启动，请先在候选人页绑定岗位"
     })
 
 

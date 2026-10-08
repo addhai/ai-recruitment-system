@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from src.models.database import get_db, Candidate, Resume, WorkflowRun
 from src.models.schemas import CandidateCreate, CandidateUpdate, CandidateResponse, ResumeCreate, ResumeResponse, WorkflowRunResponse
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_hr_admin, require_hr_admin_interviewer
 from src.safety import InputGuard, OutputGuard
 from src.sse.notification import notify_candidate_added
+from src.workflow import db_actions
 from src.workflow.runner import start_workflow, resume_workflow, trigger_after_upload
 from src.services.resume_cleaner import (
     validate_resume_file,
@@ -31,7 +32,7 @@ def list_candidates(
     position: Optional[str] = None,
     search: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin_interviewer)
 ):
     query = db.query(Candidate)
     
@@ -49,7 +50,7 @@ def list_candidates(
 
 
 @router.get("/{candidate_id}", response_model=CandidateResponse)
-def get_candidate(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_candidate(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin_interviewer)):
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -57,7 +58,7 @@ def get_candidate(candidate_id: int, db: Session = Depends(get_db), current_user
 
 
 @router.post("/", response_model=CandidateResponse)
-async def create_candidate(candidate: CandidateCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def create_candidate(candidate: CandidateCreate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     if candidate.email:
         existing = db.query(Candidate).filter(Candidate.email == candidate.email).first()
         if existing:
@@ -68,7 +69,8 @@ async def create_candidate(candidate: CandidateCreate, db: Session = Depends(get
         email=candidate.email,
         phone=candidate.phone,
         source=candidate.source,
-        position=candidate.position
+        position=candidate.position,
+        job_description_id=candidate.job_description_id
     )
     db.add(new_candidate)
     db.commit()
@@ -84,7 +86,7 @@ async def create_candidate(candidate: CandidateCreate, db: Session = Depends(get
 
 
 @router.put("/{candidate_id}", response_model=CandidateResponse)
-def update_candidate(candidate_id: int, candidate: CandidateUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def update_candidate(candidate_id: int, candidate: CandidateUpdate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     db_candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not db_candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -101,6 +103,8 @@ def update_candidate(candidate_id: int, candidate: CandidateUpdate, db: Session 
         db_candidate.source = candidate.source
     if candidate.position:
         db_candidate.position = candidate.position
+    if candidate.job_description_id is not None:
+        db_candidate.job_description_id = candidate.job_description_id
     
     db.commit()
     db.refresh(db_candidate)
@@ -108,7 +112,7 @@ def update_candidate(candidate_id: int, candidate: CandidateUpdate, db: Session 
 
 
 @router.delete("/{candidate_id}")
-async def delete_candidate(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def delete_candidate(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -121,7 +125,7 @@ async def delete_candidate(candidate_id: int, db: Session = Depends(get_db), cur
 
 
 @router.post("/{candidate_id}/resume", response_model=ResumeResponse)
-def upload_resume(candidate_id: int, resume: ResumeCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def upload_resume(candidate_id: int, resume: ResumeCreate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     candidate = db.query(Candidate).filter(Candidate.id == candidate_id).first()
     if not candidate:
         raise HTTPException(status_code=404, detail="Candidate not found")
@@ -142,7 +146,7 @@ def upload_resume(candidate_id: int, resume: ResumeCreate, db: Session = Depends
 
 
 @router.get("/{candidate_id}/resume", response_model=ResumeResponse)
-def get_resume(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_resume(candidate_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin_interviewer)):
     resume = db.query(Resume).filter(Resume.candidate_id == candidate_id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
@@ -155,7 +159,7 @@ async def upload_resume_file(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin)
 ):
     """上传简历文件，提取文本并存入 Resume 表
 
@@ -266,7 +270,7 @@ async def upload_resume_file(
 def get_workflow_run(
     candidate_id: int,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin_interviewer)
 ):
     """获取候选人最近一次工作流运行记录（含真实进度与结果）"""
     workflow_run = (
@@ -285,9 +289,13 @@ async def run_recruitment_workflow(
     candidate_id: int,
     body: dict = Body(..., description="职位要求"),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin)
 ):
     """启动全链路招聘工作流。
+
+    人岗匹配强制依赖已启用的岗位 JD：没有它直接 400。
+    此前回退到 candidate.position（岗位名字符串），等于拿简历自述的职责
+    去匹配简历自己，属自我印证而非真实匹配。
 
     自动推进到第一个挂起点（问卷待作答）后返回 waiting_human；
     后续人工事件（问卷作答、面试结果录入）由对应 API 自动恢复工作流，无需重复调用本接口。
@@ -298,13 +306,21 @@ async def run_recruitment_workflow(
 
     position_requirements = body.get("position_requirements", "")
 
+    jd_id = body.get("job_description_id") or candidate.job_description_id
+    if not db_actions.get_active_job_description(jd_id):
+        raise HTTPException(
+            status_code=400,
+            detail="未绑定有效岗位 JD（需在岗位管理中解析并启用），无法启动人岗匹配",
+        )
+
     # 安全检查：对工作流输入（简历文本 + 职位要求）做输入防护
     for label, text in (("简历文本", candidate.resume_text or ""), ("职位要求", position_requirements)):
         is_safe, reason = InputGuard.check(text)
         if not is_safe:
             raise HTTPException(status_code=400, detail=f"{label}未通过安全检查：{reason}")
 
-    result = await start_workflow(candidate_id, position_requirements)
+    result = await start_workflow(candidate_id, position_requirements,
+                                  job_description_id=jd_id)
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result.get("error", "工作流启动失败"))
     return _sanitize_output(result)
@@ -315,7 +331,7 @@ async def resume_recruitment_workflow(
     candidate_id: int,
     body: dict = Body(..., description="人工事件：wait_type + payload"),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin)
 ):
     """人工事件恢复挂起的工作流（通常由问卷提交/面试完成接口自动调用，也可手动触发）。
 

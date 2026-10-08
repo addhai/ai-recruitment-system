@@ -4,7 +4,7 @@ from typing import List
 from datetime import datetime
 from src.models.database import get_db, TalentPool, Candidate
 from src.models.schemas import TalentPoolCreate, TalentPoolResponse
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_hr_admin
 
 router = APIRouter(prefix="/talent-pool", tags=["talent-pool"])
 
@@ -14,7 +14,7 @@ def list_talent_pool(
     status: str = None,
     tag: str = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin)
 ):
     query = db.query(TalentPool)
     
@@ -27,7 +27,7 @@ def list_talent_pool(
 
 
 @router.get("/{pool_id}", response_model=TalentPoolResponse)
-def get_talent_pool(pool_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_talent_pool(pool_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     pool = db.query(TalentPool).filter(TalentPool.id == pool_id).first()
     if not pool:
         raise HTTPException(status_code=404, detail="Talent pool entry not found")
@@ -35,7 +35,7 @@ def get_talent_pool(pool_id: int, db: Session = Depends(get_db), current_user=De
 
 
 @router.post("/", response_model=TalentPoolResponse)
-def add_to_pool(pool: TalentPoolCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def add_to_pool(pool: TalentPoolCreate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     existing = db.query(TalentPool).filter(TalentPool.candidate_id == pool.candidate_id).first()
     if existing:
         raise HTTPException(status_code=400, detail="Candidate already in talent pool")
@@ -56,7 +56,7 @@ def add_to_pool(pool: TalentPoolCreate, db: Session = Depends(get_db), current_u
 
 
 @router.put("/{pool_id}", response_model=TalentPoolResponse)
-def update_pool(pool_id: int, status: str = None, tags: List[str] = None, notes: str = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def update_pool(pool_id: int, status: str = None, tags: List[str] = None, notes: str = None, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     pool = db.query(TalentPool).filter(TalentPool.id == pool_id).first()
     if not pool:
         raise HTTPException(status_code=404, detail="Talent pool entry not found")
@@ -74,7 +74,7 @@ def update_pool(pool_id: int, status: str = None, tags: List[str] = None, notes:
 
 
 @router.delete("/{pool_id}")
-def remove_from_pool(pool_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def remove_from_pool(pool_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     pool = db.query(TalentPool).filter(TalentPool.id == pool_id).first()
     if not pool:
         raise HTTPException(status_code=404, detail="Talent pool entry not found")
@@ -84,7 +84,7 @@ def remove_from_pool(pool_id: int, db: Session = Depends(get_db), current_user=D
 
 
 @router.post("/{pool_id}/contact")
-def record_contact(pool_id: int, notes: str = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def record_contact(pool_id: int, notes: str = None, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     pool = db.query(TalentPool).filter(TalentPool.id == pool_id).first()
     if not pool:
         raise HTTPException(status_code=404, detail="Talent pool entry not found")

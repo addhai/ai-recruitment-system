@@ -3,14 +3,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from src.models.database import get_db, Candidate, Interview, Evaluation
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_all_authenticated
 from src.models.schemas import DashboardStats
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 
 @router.get("/stats", response_model=DashboardStats)
-def get_dashboard_stats(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_dashboard_stats(db: Session = Depends(get_db), current_user=Depends(require_all_authenticated)):
     total_candidates = db.query(Candidate).count()
     
     pending_candidates = db.query(Candidate).filter(Candidate.status == "pending").count()
@@ -20,14 +20,16 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user=Depends(get_
     hired_candidates = db.query(Candidate).filter(Candidate.status == "hired").count()
     
     completed_interviews = db.query(Interview).filter(Interview.status == "completed").all()
-    avg_interview_time = 0
-    if completed_interviews:
-        total_time = 0
-        for interview in completed_interviews:
-            if interview.scheduled_at and interview.completed_at:
-                duration = (interview.completed_at - interview.scheduled_at).total_seconds() / 60
-                total_time += duration
-        avg_interview_time = total_time / len(completed_interviews)
+    # 平均面试时长 = 排期到完成的分钟数。
+    # 工作流自动排期落在未来，HR 提前录入结果时 completed_at 会早于 scheduled_at，
+    # 直接参与计算会让均值变成负数；这类样本必须剔除，
+    # 且分母要与实际参与统计的样本数保持一致，否则均值被稀释。
+    durations = [
+        (i.completed_at - i.scheduled_at).total_seconds() / 60
+        for i in completed_interviews
+        if i.scheduled_at and i.completed_at and i.completed_at >= i.scheduled_at
+    ]
+    avg_interview_time = sum(durations) / len(durations) if durations else 0
     
     evaluations = db.query(Evaluation).all()
     avg_match_score = 0
@@ -56,7 +58,7 @@ def get_dashboard_stats(db: Session = Depends(get_db), current_user=Depends(get_
 
 
 @router.get("/recent-candidates")
-def get_recent_candidates(limit: int = 10, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_recent_candidates(limit: int = 10, db: Session = Depends(get_db), current_user=Depends(require_all_authenticated)):
     candidates = db.query(Candidate).order_by(Candidate.created_at.desc()).limit(limit).all()
     return [
         {
@@ -72,7 +74,7 @@ def get_recent_candidates(limit: int = 10, db: Session = Depends(get_db), curren
 
 
 @router.get("/interview-stats")
-def get_interview_stats(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_interview_stats(db: Session = Depends(get_db), current_user=Depends(require_all_authenticated)):
     total_interviews = db.query(Interview).count()
     completed = db.query(Interview).filter(Interview.status == "completed").count()
     scheduled = db.query(Interview).filter(Interview.status == "scheduled").count()
@@ -94,7 +96,7 @@ def get_interview_stats(db: Session = Depends(get_db), current_user=Depends(get_
 
 
 @router.get("/weekly-trend")
-def get_weekly_trend(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_weekly_trend(db: Session = Depends(get_db), current_user=Depends(require_all_authenticated)):
     today = datetime.now()
     trend = []
     

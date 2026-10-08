@@ -59,6 +59,36 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
     return current_user
 
 
+# ---------------------------------------------------------------- 权限守卫
+# 说明：本项目此前所有业务路由都只挂了 get_current_user，角色仅存在于
+# User.role 与前端菜单的 roles 过滤里——那是 UI 隐藏，不是安全边界。
+# 任何登录用户（含 viewer）直接调 API 都能改删数据。这里提供统一守卫，
+# 让权限口径集中在一处，新增路由不要再各自发明判断逻辑。
+
+def require_roles(*allowed: str):
+    """生成一个校验角色的 FastAPI 依赖。
+
+    用法：current_user=Depends(require_roles("hr", "admin"))
+    """
+    allowed_set = set(allowed)
+
+    async def _dep(current_user: User = Depends(get_current_user)):
+        if current_user.role not in allowed_set:
+            raise HTTPException(
+                status_code=403,
+                detail=f"权限不足：需要 {'/'.join(sorted(allowed_set))} 角色之一",
+            )
+        return current_user
+    return _dep
+
+
+# 常用权限组合，口径与前端 Sidebar 的菜单 roles 保持一致
+require_admin = require_roles("admin")
+require_hr_admin = require_roles("hr", "admin")
+require_hr_admin_interviewer = require_roles("hr", "admin", "interviewer")
+require_all_authenticated = require_roles("admin", "hr", "interviewer", "viewer")
+
+
 @router.post("/register", response_model=UserResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()

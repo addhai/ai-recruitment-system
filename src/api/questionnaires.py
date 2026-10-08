@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from src.models.database import get_db, Questionnaire, QuestionnaireResponse
 from src.models.schemas import QuestionnaireCreate, QuestionnaireResponseCreate, QuestionnaireResponseResponse
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_hr_admin
 from src.safety import InputGuard
 
 router = APIRouter(prefix="/questionnaires", tags=["questionnaires"])
@@ -22,7 +22,7 @@ async def _resume_workflow_after_questionnaire(candidate_id: int, questionnaire_
 
 
 @router.get("/", response_model=List[dict])
-def list_questionnaires(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def list_questionnaires(db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     questionnaires = db.query(Questionnaire).all()
     return [
         {
@@ -37,7 +37,7 @@ def list_questionnaires(db: Session = Depends(get_db), current_user=Depends(get_
 
 
 @router.get("/{questionnaire_id}")
-def get_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     questionnaire = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
     if not questionnaire:
         raise HTTPException(status_code=404, detail="Questionnaire not found")
@@ -51,7 +51,7 @@ def get_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), curr
 
 
 @router.post("/")
-def create_questionnaire(questionnaire: QuestionnaireCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def create_questionnaire(questionnaire: QuestionnaireCreate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     new_questionnaire = Questionnaire(
         name=questionnaire.name,
         type=questionnaire.type,
@@ -70,7 +70,7 @@ def create_questionnaire(questionnaire: QuestionnaireCreate, db: Session = Depen
 
 
 @router.put("/{questionnaire_id}")
-def update_questionnaire(questionnaire_id: int, name: str = None, questions: List[dict] = None, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def update_questionnaire(questionnaire_id: int, name: str = None, questions: List[dict] = None, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     q = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
     if not q:
         raise HTTPException(status_code=404, detail="Questionnaire not found")
@@ -91,7 +91,7 @@ def update_questionnaire(questionnaire_id: int, name: str = None, questions: Lis
 
 
 @router.delete("/{questionnaire_id}")
-def delete_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def delete_questionnaire(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     q = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
     if not q:
         raise HTTPException(status_code=404, detail="Questionnaire not found")
@@ -106,7 +106,7 @@ async def submit_response(
     response: QuestionnaireResponseCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin)
 ):
     """提交问卷作答。提交后自动恢复招聘工作流：AI 评分，达标则自动进入面试排期"""
     q = db.query(Questionnaire).filter(Questionnaire.id == questionnaire_id).first()
@@ -136,6 +136,6 @@ async def submit_response(
 
 
 @router.get("/{questionnaire_id}/responses", response_model=List[QuestionnaireResponseResponse])
-def get_responses(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_responses(questionnaire_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     responses = db.query(QuestionnaireResponse).filter(QuestionnaireResponse.questionnaire_id == questionnaire_id).all()
     return responses

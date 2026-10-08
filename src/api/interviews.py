@@ -4,7 +4,7 @@ from typing import List, Optional
 from datetime import datetime
 from src.models.database import get_db, Interview
 from src.models.schemas import InterviewCreate, InterviewUpdate, InterviewResponse
-from src.api.auth import get_current_user
+from src.api.auth import get_current_user, require_hr_admin, require_hr_admin_interviewer
 from src.sse.notification import (
     notify_interview_scheduled as notify_sse_interview_scheduled,
     notify_interview_completed as notify_sse_interview_completed,
@@ -39,7 +39,7 @@ def list_interviews(
     candidate_id: Optional[int] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin_interviewer)
 ):
     query = db.query(Interview)
     
@@ -52,7 +52,7 @@ def list_interviews(
 
 
 @router.get("/{interview_id}", response_model=InterviewResponse)
-def get_interview(interview_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_interview(interview_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin_interviewer)):
     interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
@@ -60,7 +60,7 @@ def get_interview(interview_id: int, db: Session = Depends(get_db), current_user
 
 
 @router.post("/", response_model=InterviewResponse)
-async def create_interview(interview: InterviewCreate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def create_interview(interview: InterviewCreate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     new_interview = Interview(
         candidate_id=interview.candidate_id,
         position=interview.position,
@@ -89,7 +89,7 @@ async def create_interview(interview: InterviewCreate, db: Session = Depends(get
 
 
 @router.put("/{interview_id}", response_model=InterviewResponse)
-def update_interview(interview_id: int, interview: InterviewUpdate, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def update_interview(interview_id: int, interview: InterviewUpdate, db: Session = Depends(get_db), current_user=Depends(require_hr_admin_interviewer)):
     db_interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not db_interview:
         raise HTTPException(status_code=404, detail="Interview not found")
@@ -112,7 +112,7 @@ def update_interview(interview_id: int, interview: InterviewUpdate, db: Session 
 
 
 @router.delete("/{interview_id}")
-def delete_interview(interview_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def delete_interview(interview_id: int, db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
     interview = db.query(Interview).filter(Interview.id == interview_id).first()
     if not interview:
         raise HTTPException(status_code=404, detail="Interview not found")
@@ -129,7 +129,7 @@ async def complete_interview(
     feedback: str,
     notes: str = None,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(require_hr_admin_interviewer)
 ):
     """录入面试结果。保存后自动恢复招聘工作流，由 AI 判定晋级/淘汰并推进下一环节"""
     interview = db.query(Interview).filter(Interview.id == interview_id).first()
