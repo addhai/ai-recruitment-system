@@ -251,15 +251,23 @@ def _build_embeddings() -> Optional[OpenAIEmbeddings]:
 
 
 def _build_chat_llm() -> Optional[ChatOpenAI]:
-    if not settings.LLM_API_KEY:
+    """知识库问答客户端：走生效配置（数据库里的模型配置优先）。
+
+    温度用 0.3——生成式回答需要比评分类任务（0.1）更高的随机性，
+    但仍走同一套模型名/密钥/Base URL，使界面切换模型时一并生效。
+    """
+    from src.services import llm_config
+
+    cfg = llm_config.get_effective_config()
+    if not cfg["api_key"]:
         return None
     return ChatOpenAI(
-        model=settings.LLM_MODEL,
+        model=cfg["model"],
         temperature=0.3,
-        timeout=45,
+        timeout=cfg["timeout_seconds"] or 45,
         max_retries=2,
-        api_key=settings.LLM_API_KEY,
-        base_url=settings.LLM_API_BASE,
+        api_key=cfg["api_key"],
+        base_url=cfg["base_url"],
     )
 
 

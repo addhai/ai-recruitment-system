@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Shield, Bell, Palette, Plus, X, Check, Edit2, Trash2 } from 'lucide-react';
+import { Users, Shield, Bell, Palette, Plus, X, Check, Edit2, Trash2, Cpu } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import type { SkinPreset } from '../context/ThemeContext';
 import { getCurrentUser } from '../services/auth';
+import ModelConfigPanel from '../components/Settings/ModelConfigPanel';
 
 interface User {
   id: number;
@@ -56,12 +57,14 @@ const Settings: React.FC = () => {
       .catch(() => { /* 未登录或接口异常时忽略，保留本地配置 */ });
   }, []);
 
+  // 模型配置涉及账号密钥与成本口径，仅管理员可见（后端同口径 require_admin）
   const tabs = [
     { id: 'users', label: '用户管理', icon: Users },
     { id: 'roles', label: '角色权限', icon: Shield },
+    { id: 'model', label: '模型配置', icon: Cpu },
     { id: 'notifications', label: '通知设置', icon: Bell },
     { id: 'appearance', label: '外观设置', icon: Palette },
-  ];
+  ].filter((t) => t.id !== 'model' || currentUser?.role === 'admin');
 
   const getRoleText = (role: string) => {
     const map: Record<string, string> = {
@@ -292,6 +295,8 @@ const Settings: React.FC = () => {
                 </div>
               </div>
             )}
+
+            {activeTab === 'model' && <ModelConfigPanel />}
 
             {activeTab === 'notifications' && (
               <div>

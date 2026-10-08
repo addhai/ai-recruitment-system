@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.logging_setup import setup_logging
 from src.api import auth, candidates, interviews, questionnaires, evaluations, talent_pool, dashboard, sse, knowledge_base
-from src.api import job_descriptions, reviews, positions, llm_stats
+from src.api import job_descriptions, reviews, positions, llm_stats, llm_config
 from src.models.database import init_db
 from src.config import settings
 
@@ -31,6 +31,7 @@ app.include_router(job_descriptions.router)
 app.include_router(positions.router)
 app.include_router(reviews.router)
 app.include_router(llm_stats.router)
+app.include_router(llm_config.router)
 
 
 @app.on_event("startup")

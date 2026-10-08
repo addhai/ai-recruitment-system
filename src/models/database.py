@@ -237,7 +237,13 @@ def _ensure_columns():
         "interviews": [("questions", "JSON")],
         "candidates": [("job_description_id", "INTEGER")],
         "job_descriptions": [("position_id", "INTEGER")],
+        "llm_call_logs": [("currency", "VARCHAR(8)")],
     }
+    # 列重命名：cost_usd 在引入多币种后名不副实（DeepSeek 报价为人民币）
+    renames = {
+        "llm_call_logs": [("cost_usd", "cost")],
+    }
+
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
     with engine.begin() as conn:
@@ -249,6 +255,15 @@ def _ensure_columns():
                 if col_name not in existing_cols:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"))
                     print(f"[db] 迁移：{table} 新增列 {col_name}")
+
+        for table, pairs in renames.items():
+            if table not in existing_tables:
+                continue
+            existing_cols = {c["name"] for c in inspector.get_columns(table)}
+            for old_name, new_name in pairs:
+                if old_name in existing_cols and new_name not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE {table} RENAME COLUMN {old_name} TO {new_name}"))
+                    print(f"[db] 迁移：{table} 重命名列 {old_name} -> {new_name}")
 
 
 class KnowledgeDocument(Base):
@@ -285,13 +300,44 @@ class LLMCallLog(Base):
     base_url = Column(String(128))
     input_tokens = Column(Integer)
     output_tokens = Column(Integer)
-    cost_usd = Column(Float)
+    # 成本以 currency 标明的币种计价（DeepSeek 官方报价为人民币）
+    cost = Column(Float)
+    currency = Column(String(8))
     latency_ms = Column(Integer)
     status = Column(String(20))                   # ok / failed / budget_blocked
     degraded = Column(Boolean, default=False)      # 是否走了 default 兜底分
     usage_missing = Column(Boolean, default=False)  # 供应商未返回 token 用量
     prompt_hash = Column(String(64))              # prompt 前 500 字符的 sha256
     error = Column(Text)
+
+
+class LLMSettings(Base):
+    """模型接入配置（单行表，id 恒为 1）。
+
+    项目不是模型中转站，不预置某家供应商的固定接入：由使用者在界面上
+    填写模型名、API Key、Base URL 与单价，后端据此切换。
+    .env 中的配置作为兜底默认值。
+
+    API Key 用 SECRET_KEY 派生的密钥加密存储，接口永不回传明文
+    （只回传掩码预览），避免密钥随接口响应或日志泄露。
+    """
+    __tablename__ = "llm_settings"
+
+    id = Column(Integer, primary_key=True)
+    model = Column(String(100))
+    base_url = Column(String(200))
+    api_key_encrypted = Column(Text)
+    # 单价：每百万 token，币种由 currency 决定
+    input_price = Column(Float)
+    output_price = Column(Float)
+    currency = Column(String(8), default="CNY")
+    # 高峰期价格倍数（DeepSeek 高峰 = 空闲 × 2；其它供应商填 1.0 表示无分时计价）
+    peak_multiplier = Column(Float, default=1.0)
+    # 预留：温度、超时等可按模型调整的参数
+    temperature = Column(Float)
+    timeout_seconds = Column(Integer)
+    updated_by = Column(Integer, ForeignKey("users.id"))
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 _ensure_tables_done = False

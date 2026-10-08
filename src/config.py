@@ -15,8 +15,13 @@ class Settings(BaseSettings):
 
     LLM_API_KEY: str = ""
     LLM_API_BASE: str = "https://api.deepseek.com"
-    LLM_MODEL: str = "deepseek-chat"
-    LLM_COMPLEX_MODEL: str = "deepseek-chat"
+    # 兜底默认模型名。正式使用请在「系统设置 → 模型配置」里填写，
+    # 那里的值优先于 .env（详见 src/services/llm_config.py）。
+    LLM_MODEL: str = "deepseek-flash"
+    # 【已废弃，不生效】历史字段，代码从不读取。
+    # 保留声明的原因是 Settings 开了 extra="forbid"：直接删掉会让
+    # 环境里仍带着这个键的既有部署启动即崩，代价远大于留一个死字段。
+    LLM_COMPLEX_MODEL: Optional[str] = None
     # Embedding 独立配置：DeepSeek 不提供 embedding 接口，默认走硅基流动（OpenAI 兼容）
     # EMBEDDING_API_KEY 留空时回退复用 LLM_API_KEY（适用于同一网关同时提供 chat+embedding 的场景）
     EMBEDDING_API_KEY: str = ""
@@ -70,10 +75,24 @@ class Settings(BaseSettings):
     SCORING_VERSION: str = "v2"
 
     # ---------------------------------------------------------------- LLM 成本
-    # 单价按供应商报价配置（单位：美元/百万 token）。留 0 表示未配置成本价，
-    # 此时 cost 记 0 且**自动跳过预算检查**——避免忘配单价就把业务卡死。
+    # 下表为**兜底默认值**：项目不是模型中转站，实际接入由使用者在
+    # 「系统设置 → 模型配置」里填写（模型名/API Key/Base URL/单价），
+    # 数据库配置优先于这里的值。
+    #
+    # 单价单位：每百万 token，币种由 LLM_PRICE_CURRENCY 标明。
+    # 留 0 表示未配置成本价，此时 cost 记 0 且**自动跳过预算检查**——
+    # 避免忘配单价就把业务卡死。
     LLM_INPUT_PRICE_PER_MILLION: float = 0.0
     LLM_OUTPUT_PRICE_PER_MILLION: float = 0.0
+    LLM_PRICE_CURRENCY: str = "CNY"
+    # 高峰期价格倍数。DeepSeek 官方按分时计价，空闲价为高峰的一半，
+    # 即 peak_multiplier=2.0（高峰=北京时间周一至周五 9:00-12:00、14:00-18:00）；
+    # 其它供应商若不分时段，填 1.0。
+    LLM_PEAK_MULTIPLIER: float = 1.0
+
+    # 评分类任务要求低温度保证同分输入结果稳定可复现（可被数据库配置覆盖）
+    LLM_TEMPERATURE: float = 0.1
+    LLM_TIMEOUT_SECONDS: int = 45
 
     # 调用日志保留天数；init_db() 启动时按此清理过期的 llm_call_logs
     LLM_LOG_RETENTION_DAYS: int = 90
@@ -82,7 +101,13 @@ class Settings(BaseSettings):
     # 超限时停止后续调用，工作流转「待人工评估」，不产出半成品招聘决策。
     LLM_BUDGET_ENABLED: bool = True
     LLM_BUDGET_PERIOD: str = "daily"          # daily | monthly
-    LLM_BUDGET_USD: float = 5.0
+    # 预算上限的**币种与 LLM_PRICE_CURRENCY 一致**（默认人民币）。
+    # 成本按单价折算，单价是什么币种，上限就必须是什么币种，
+    # 否则 ¥ 的花费会被拿去比 $ 的阈值——数量级直接错掉。
+    LLM_BUDGET_AMOUNT: float = 5.0
+    # 旧字段名（USD 语义），仅作兼容别名：一旦显式设置就优先于 LLM_BUDGET_AMOUNT，
+    # 避免既有部署升级后静默丢掉上限保护。
+    LLM_BUDGET_USD: Optional[float] = None
     LLM_BUDGET_ACTION: str = "halt"           # halt=停转人工 / warn=仅告警继续
     # 每累计 N 次调用回读一次数据库，避免每次都 SUM 全表
     LLM_BUDGET_REFRESH_EVERY: int = 20
