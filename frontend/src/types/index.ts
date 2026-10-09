@@ -109,6 +109,9 @@ export interface ReviewItem {
   } | null;
   assessed_dimensions: string[];
   scoring_version: string | null;
+  // 评分口径指纹（由后端代码 + 运行时配置算出）：指纹不同即表示口径变过，
+  // 分数不可直接比较；相同也不保证分数可复现（模型采样本身有随机性）
+  scoring_fingerprint: string | null;
   talent_pool_tags: string[] | null;
   updated_at: string | null;
 }

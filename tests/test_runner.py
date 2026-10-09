@@ -197,6 +197,75 @@ def test_finalize_completed_writes_full_result():
         assert run.results["final_decision"] == "推荐录用"
 
 
+def _mk_run_with_results(cid, results) -> int:
+    with SessionLocal() as db:
+        run = WorkflowRun(candidate_id=cid, status="running", current_step="x",
+                          progress=40, results=results)
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return run.id
+
+
+# 下面三条守同一个缺口：**口径信息必须活过挂起与异常结束**。
+# 这三条路径此前都是整体覆盖 results，只写自己关心的键，
+# 于是一旦流程停在"等问卷/等面试"，启动时写入的 thread_id / jd_profile /
+# scoring_version / scoring_fingerprint 全被抹掉。挂起是最常见的中途状态，
+# 不是罕见分支；抹掉之后复核列表读 scoring_version 会拿到 None，
+# 运行记录也再对不上 checkpoint 的 thread_id。
+
+def test_finalize_waiting_keeps_scoring_metadata():
+    cid = _mk_candidate("挂起保留口径")
+    rid = _mk_run_with_results(cid, {
+        "thread_id": "wf-keep", "jd_profile": {"basic": {"education_required": "本科"}},
+        "scoring_version": "v2", "scoring_fingerprint": "abcdef0123456789",
+    })
+    asyncio.run(runner._finalize_outcome(
+        {"status": "waiting", "interrupt": {"type": "await_interview", "round": 1},
+         "progress": 60},
+        rid, cid, "候选人", "wf-keep", 0.0,
+    ))
+    with SessionLocal() as db:
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == rid).first()
+        assert run.status == "waiting_human"
+        assert run.results["interrupt"]["type"] == "await_interview", "挂起信息要写进去"
+        assert run.results["thread_id"] == "wf-keep"
+        assert run.results["scoring_version"] == "v2"
+        assert run.results["scoring_fingerprint"] == "abcdef0123456789"
+        assert run.results["jd_profile"]["basic"]["education_required"] == "本科"
+
+
+def test_finalize_error_keeps_scoring_metadata():
+    cid = _mk_candidate("失败保留口径")
+    rid = _mk_run_with_results(cid, {"thread_id": "wf-err",
+                                     "scoring_fingerprint": "fp-error"})
+    asyncio.run(runner._finalize_outcome(
+        {"status": "error", "error": "LLM 超时"}, rid, cid, "候选人", "wf-err", 0.0))
+    with SessionLocal() as db:
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == rid).first()
+        assert run.status == "failed"
+        assert run.results["error"] == "LLM 超时"
+        assert run.results["thread_id"] == "wf-err"
+        assert run.results["scoring_fingerprint"] == "fp-error"
+
+
+def test_finalize_budget_halted_keeps_scoring_metadata():
+    cid = _mk_candidate("预算中止保留口径")
+    rid = _mk_run_with_results(cid, {"thread_id": "wf-budget",
+                                     "scoring_fingerprint": "fp-budget"})
+    out = asyncio.run(runner._finalize_outcome(
+        {"status": "budget_exhausted", "error": "预算不足",
+         "values": {"current_step": "evaluate_skill_match"}},
+        rid, cid, "候选人", "wf-budget", 0.0))
+    assert out["status"] == "budget_halted"
+    with SessionLocal() as db:
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == rid).first()
+        assert run.status == "budget_halted"
+        assert run.results["budget_halted"] is True
+        assert run.results["scoring_fingerprint"] == "fp-budget"
+        assert run.results["thread_id"] == "wf-budget"
+
+
 def _mk_active_jd() -> int:
     """建一条可用的 active JD（解析成功），供强制绑定的路径使用"""
     from src.models.database import JobDescription

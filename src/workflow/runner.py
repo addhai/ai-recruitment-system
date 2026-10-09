@@ -35,6 +35,7 @@ from src.models.database import SessionLocal, Candidate, WorkflowRun
 from src.workflow import db_actions
 from src.services import budget
 from src.services import trace
+from src.workflow import scoring_fingerprint
 from src.workflow.recruitment_graph import build_recruitment_graph, compute_overall
 from src.sse.notification import notify_workflow_progress
 from src.safety import OutputGuard
@@ -211,6 +212,28 @@ def _update_run(workflow_run_id: int, **fields) -> None:
             db.commit()
 
 
+def _update_run_merging_results(workflow_run_id: int, patch: Dict[str, Any],
+                                **fields) -> None:
+    """更新 WorkflowRun，并把 patch **合并**进已有 results，而不是整体替换。
+
+    为什么需要：results 里除了流程自身的进展，还存着启动时就写好的口径信息
+    （thread_id / jd_profile / scoring_version / scoring_fingerprint）。
+    挂起与失败这两个分支此前是**整体覆盖** results 的，于是流程只要停在
+    "等问卷作答 / 等面试录入"，口径信息就被抹掉——复核列表读 scoring_version
+    会读到 None，而挂起恰恰是最常见的中途状态，不是罕见路径。
+    """
+    with SessionLocal() as db:
+        run = db.query(WorkflowRun).filter(WorkflowRun.id == workflow_run_id).first()
+        if not run:
+            return
+        merged = dict(run.results) if isinstance(run.results, dict) else {}
+        merged.update(patch)
+        run.results = merged
+        for k, v in fields.items():
+            setattr(run, k, v)
+        db.commit()
+
+
 def _get_active_run(db, candidate_id: int) -> Optional[WorkflowRun]:
     return (
         db.query(WorkflowRun)
@@ -259,6 +282,11 @@ def _build_result(values: Dict[str, Any], candidate: Candidate) -> Dict[str, Any
         "jd_source": values.get("jd_source"),
         # 评分口径版本：提示词与权重变更后，新旧分数不可比，回溯时需要区分
         "scoring_version": settings.SCORING_VERSION,
+        # 口径指纹由代码与运行时配置算出（见 scoring_fingerprint 模块）。
+        # 与上面那个人工维护的字符串并存：字符串给人读，指纹负责"是否可比"这个判断，
+        # 这样改了提示词却忘了改版本号时，可比性判断不会跟着一起错。
+        "scoring_fingerprint": values.get("scoring_fingerprint")
+                                or scoring_fingerprint.fingerprint(),
         "final_decision": decision,
         "overall_score": overall,
         "skill_match_score": skill,
@@ -392,8 +420,12 @@ async def start_workflow(candidate_id: int, position_requirements: str = "",
         resume_text = candidate.resume_text or ""
         position = candidate.position or ""
         thread_id = _new_thread_id()
+        # 指纹只在这里算一次：算两次可能因为中途有人改了模型配置而得到两个值，
+        # 同一次运行应当只有一个口径。
+        fingerprint = scoring_fingerprint.fingerprint()
         run.results = {"thread_id": thread_id, "jd_profile": jd.get("parsed_data"),
-                       "scoring_version": settings.SCORING_VERSION}
+                       "scoring_version": settings.SCORING_VERSION,
+                       "scoring_fingerprint": fingerprint}
         db.commit()
 
     # 候选人进入筛选阶段
@@ -418,6 +450,7 @@ async def start_workflow(candidate_id: int, position_requirements: str = "",
             "job_description_id": jd["id"],
             "jd_profile": jd.get("parsed_data"),
             "jd_source": "job_description",
+            "scoring_fingerprint": fingerprint,
         },
     )
 
@@ -480,8 +513,9 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
         if outcome["status"] == "waiting":
             interrupt_payload = outcome["interrupt"]
             wait_type = interrupt_payload.get("type", "unknown")
-            _update_run(run_id, status="waiting_human", current_step=wait_type,
-                        results={"thread_id": thread_id, "interrupt": interrupt_payload})
+            _update_run_merging_results(
+                run_id, {"thread_id": thread_id, "interrupt": interrupt_payload},
+                status="waiting_human", current_step=wait_type)
             await notify_workflow_progress(candidate_id, outcome.get("progress", 0), wait_type,
                                            {"waiting": True, "candidate_name": candidate_name})
             return _sanitize({
@@ -507,10 +541,9 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
                 f"成本预算耗尽，流程中止于 {values.get('current_step') or '未知环节'}。"
                 f"已完成维度：{', '.join(assessed) or '无'}。请人工评估或提高预算后重跑。",
             )
-            _update_run(
-                run_id, status="budget_halted",
-                current_step=values.get("current_step") or "budget_halted",
-                results={
+            _update_run_merging_results(
+                run_id,
+                {
                     "thread_id": thread_id,
                     "budget_halted": True,
                     "error": outcome.get("error"),
@@ -519,6 +552,8 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
                     # 提示 HR 可以直接重跑：budget_halted 不算活跃运行，不会撞 _get_active_run
                     "can_rerun": True,
                 },
+                status="budget_halted",
+                current_step=values.get("current_step") or "budget_halted",
             )
             try:
                 from src.sse.notification import notify_budget_halted
@@ -536,7 +571,9 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
             }
 
         if outcome["status"] == "error":
-            _update_run(run_id, status="failed", results={"thread_id": thread_id, "error": outcome.get("error")})
+            _update_run_merging_results(
+                run_id, {"thread_id": thread_id, "error": outcome.get("error")},
+                status="failed")
             return {"status": "error", "workflow_run_id": run_id, "error": outcome.get("error")}
 
         # completed

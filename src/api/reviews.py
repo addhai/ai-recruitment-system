@@ -72,6 +72,10 @@ def list_pending_reviews(skip: SkipParam = 0, limit: LimitParam = 100,
             "review_detail": results.get("review_detail"),
             "assessed_dimensions": results.get("assessed_dimensions") or [],
             "scoring_version": results.get("scoring_version"),
+            # 口径指纹：判断这条历史评分与当前代码/配置是否可比。
+            # scoring_version 是人写的字符串，改了提示词忘了改它就会误导，
+            # 所以可比性判断以指纹为准（见 src/workflow/scoring_fingerprint.py）。
+            "scoring_fingerprint": results.get("scoring_fingerprint"),
             "talent_pool_tags": (pool.tags if pool else None),
             "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         })

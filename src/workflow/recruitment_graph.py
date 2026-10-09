@@ -32,6 +32,10 @@ class RecruitmentState(TypedDict, total=False):
     job_description_id: Optional[int]
     jd_profile: Optional[Dict[str, Any]]
     jd_source: Optional[str]
+    # 评分口径指纹：由 runner 在启动时算一次并随状态流转，
+    # 这样同一次运行里"启动时记录的指纹"与"完成时记录的指纹"必然一致
+    # （中途有人改了模型配置也不会让同一次运行出现两个指纹）。
+    scoring_fingerprint: Optional[str]
     needs_review: Optional[bool]
     review_reason: Optional[str]
     review_detail: Optional[Dict[str, Any]]
