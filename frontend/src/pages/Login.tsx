@@ -29,8 +29,15 @@ const Login: React.FC = () => {
     try {
       await login({ username, password });
       navigate('/');
-    } catch (err) {
-      setError('登录失败，请检查用户名和密码');
+    } catch (err: any) {
+      // 区分"服务没起"和"凭据不对"：混成一句话会把排查带偏
+      if (err?.offline) {
+        setError('无法连接到服务器。请确认后端已启动（默认 127.0.0.1:8000）后重试。');
+      } else if (err?.status === 401) {
+        setError('用户名或密码错误');
+      } else {
+        setError(err?.message || '登录失败');
+      }
     } finally {
       setLoading(false);
     }
