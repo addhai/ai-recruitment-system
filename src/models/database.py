@@ -2,6 +2,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, F
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
+from pathlib import Path
 from src.config import settings
 
 engine = create_engine(settings.DATABASE_URL)
@@ -227,10 +228,14 @@ def get_db():
 
 
 def _ensure_columns():
-    """轻量列迁移：create_all 不会给已存在的旧表加列，检查后补齐缺失列。
+    """【仅用于 alembic 纳管前的旧库】轻量列迁移：补齐缺失列、执行历史列重命名。
 
-    用 SQLAlchemy Inspector 做跨方言列探测（SQLite/PostgreSQL 通用），
-    避免裸写 SQLite 专有的 PRAGMA 导致在 PostgreSQL 上启动崩溃。
+    新增这个函数的年代没有迁移框架：create_all 不会给已存在的旧表加列，
+    所以靠它检查后补列。现在 schema 由 migrations/ 驱动，本函数只在
+    migrate_database() 把**旧库**纳入 alembic 管理前跑一次，之后不再需要。
+
+    新库不会走到这里（没有旧表），因此不必再扩这张表；
+    今后的结构变更请写成 migrations/versions/ 下的正式迁移。
     """
     from sqlalchemy import inspect, text
     migrations = {
@@ -346,18 +351,70 @@ class LLMSettings(Base):
 
 _ensure_tables_done = False
 
+# 项目根目录（src/models/database.py -> 上溯三级）
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _alembic_config():
+    """构造 alembic 配置，连接串取自 settings.DATABASE_URL（与运行时同一个库）。
+
+    configure_logger=False 是必须的：env.py 里的 fileConfig 默认
+    disable_existing_loggers=True，若在应用进程内调用，会把已经配置好的
+    应用日志器**全部静默关掉**——埋点日志正是靠它输出的。
+    """
+    from alembic.config import Config
+    cfg = Config(str(_PROJECT_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(_PROJECT_ROOT / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+    cfg.attributes["configure_logger"] = False
+    return cfg
+
+
+def migrate_database() -> None:
+    """把库结构升到最新版本（幂等），schema 由 migrations/ 下的脚本决定。
+
+    两种情形：
+    - **全新库**：没有表，从 baseline 起逐版本 upgrade，schema 完全来自迁移脚本
+      （不再用 create_all，否则基线之外的迁移里若有数据回填，全新库会被漏掉）。
+    - **alembic 之前建的旧库**（有业务表但没有 alembic_version）：
+      先用 _ensure_columns() 把历史上靠它补的列变更补齐，再 stamp head 一次性纳管。
+      此后该库的演进全部走迁移脚本。
+
+    注意：stamp head 断言"旧库当前结构等于最新版本"。本项目历史上的结构变更
+    只有新增列与列重命名两类，_ensure_columns() 恰好覆盖这两种，因此该断言成立。
+    今后若出现改类型/回填等变更，必须写成正式迁移，不能再依赖 _ensure_columns()。
+    """
+    from alembic import command
+    from sqlalchemy import inspect as sa_inspect
+
+    tables = set(sa_inspect(engine).get_table_names())
+    has_version = "alembic_version" in tables
+    app_tables = tables - {"alembic_version"}
+
+    cfg = _alembic_config()
+    if app_tables and not has_version:
+        _ensure_columns()
+        command.stamp(cfg, "head")
+        print("[db] 已有库首次纳入 alembic 管理，已标记为最新版本")
+    command.upgrade(cfg, "head")
+
 
 def ensure_tables() -> None:
-    """确保所有表存在（幂等、轻量）。
+    """确保表结构就绪（幂等、进程内只跑一次）。
 
-    create_all 原先只在 init_db() 里调用，导致不经应用启动的入口
-    （评测脚本、CLI 工具）写埋点时会因 llm_call_logs 不存在而静默失败。
-    这里提供可独立调用的建表入口，让"记录"不依赖"服务已启动"。
+    不经应用启动的入口（评测脚本、CLI 工具）写埋点或读模型配置时会走到这里。
+    与 init_db() 的区别：这里是**尽力而为**——失败只告警不外抛，
+    因为埋点/配置读取不该因为迁移问题把业务打挂；启动路径的 init_db()
+    会照常抛出，让部署阶段就暴露问题。
     """
     global _ensure_tables_done
     if _ensure_tables_done:
         return
-    Base.metadata.create_all(bind=engine)
+    try:
+        migrate_database()
+    except Exception as e:
+        print(f"[db] 表结构迁移失败（埋点与配置读取可能异常）: {e}")
+        return
     _ensure_tables_done = True
 
 
@@ -387,8 +444,8 @@ def purge_old_llm_logs(days: int = 90) -> int:
 
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
-    _ensure_columns()
+    # schema 由 alembic 迁移驱动（旧库会在 migrate_database 内一次性纳管）
+    migrate_database()
     purge_old_llm_logs(days=settings.LLM_LOG_RETENTION_DAYS)
 
     import bcrypt

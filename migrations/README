@@ -1,0 +1,11 @@
+迁移脚本目录。使用方式、新增变更的流程、旧库纳管说明见项目根 README 的
+「数据库迁移（alembic）」一节，避免两处文档各说一套。
+
+当前版本链：
+
+  ec3e8447dd30 (baseline)  <- 引入 alembic 时的 schema 全量快照，勿改
+        |
+       head
+
+注意：alembic.ini 必须保持纯 ASCII（configparser 以系统 locale 读取，
+在 zh-CN Windows 的 GBK 下写中文会让 alembic 直接崩）。
