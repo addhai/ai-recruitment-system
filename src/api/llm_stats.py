@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from src.config import settings
 from src.models.database import get_db, LLMCallLog
 from src.api.auth import require_hr_admin
-from src.services import llm_config, budget
+from src.services import llm_config, budget, circuit_breaker
 
 router = APIRouter(prefix="/llm-stats", tags=["llm-stats"])
 
@@ -168,6 +168,9 @@ def get_summary(
         "daily": [{"date": d, "calls": c, "cost": round(cost or 0.0, 6)}
                   for d, c, cost in daily],
         "budget": budget_state,
+        # 熔断状态：打开时后续调用会快速失败，成本页要能看出
+        # "这段时间没花钱是因为我们主动不发"，而不是"没人用"
+        "circuit": circuit_breaker.snapshot(),
         "log_retention_days": settings.LLM_LOG_RETENTION_DAYS,
     }
 

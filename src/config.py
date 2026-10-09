@@ -93,6 +93,15 @@ class Settings(BaseSettings):
     # 评分类任务要求低温度保证同分输入结果稳定可复现（可被数据库配置覆盖）
     LLM_TEMPERATURE: float = 0.1
     LLM_TIMEOUT_SECONDS: int = 45
+
+    # ---------------------------------------------------------------- LLM 熔断
+    # 供应商整体故障时，每个调用都要耗完自己的重试预算才降级；
+    # 一次简历评估 4~8 次调用串起来就是几分钟纯等待。熔断让它快速失败。
+    # 只有请求层面的失败才计数（连不上/超时/5xx），JSON 解析失败与预算耗尽不计
+    # ——见 src/services/circuit_breaker.py。
+    LLM_CIRCUIT_BREAKER_ENABLED: bool = True
+    LLM_CIRCUIT_FAILURE_THRESHOLD: int = 5    # 连续失败多少次后熔断
+    LLM_CIRCUIT_OPEN_SECONDS: int = 60        # 熔断后多久放一个探针试探
     # 同时在途的 LLM 调用数上限。批量筛简历时若把 N 个候选人并发跑起来，
     # 每个候选人 4~8 次调用会瞬间放大成 N×8 个请求，很容易撞上供应商并发上限
     # （DeepSeek 官方：deepseek-flash 2500 / deepseek-v4-pro 500）。

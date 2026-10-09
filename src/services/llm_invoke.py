@@ -26,6 +26,7 @@ from langchain_core.runnables import RunnableLambda
 from src.config import settings
 from src.logging_setup import get_logger
 from src.services import budget
+from src.services import circuit_breaker
 
 logger = get_logger(__name__)
 
@@ -35,6 +36,9 @@ from src.services.llm_json import get_llm  # noqa: E402
 _STATUS_OK = "ok"
 _STATUS_FAILED = "failed"
 _STATUS_BUDGET = "budget_blocked"
+# 熔断：请求根本没发出去，与"调用失败"必须可区分，
+# 否则成本页会把"我们主动不发"读成"供应商返回了错误"
+_STATUS_CIRCUIT = "circuit_open"
 
 
 def _prompt_hash(prompt_text: str) -> str:
@@ -167,6 +171,12 @@ async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: st
     """
     await budget.check_budget()
 
+    # 熔断前置检查：打开时直接快速失败，不去发请求、也不耗重试预算
+    if not circuit_breaker.allow():
+        raise circuit_breaker.CircuitOpen(
+            f"LLM 熔断中（连续失败 {circuit_breaker.snapshot()['failures']} 次），"
+            f"暂不发起调用")
+
     llm = client or get_llm()
     model, base_url = _client_info(llm)
     prompt = PromptTemplate(template=prompt_text, input_variables=list(variables.keys()))
@@ -177,12 +187,20 @@ async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: st
 
     started = time.time()
     sem = _semaphore()
-    if sem is None:
-        msg = await asyncio.to_thread(chain.invoke, variables)
-    else:
-        # 只在"等待 + 调用"这段占用名额，埋点/记账不占
-        async with sem:
+    try:
+        if sem is None:
             msg = await asyncio.to_thread(chain.invoke, variables)
+        else:
+            # 只在"等待 + 调用"这段占用名额，埋点/记账不占
+            async with sem:
+                msg = await asyncio.to_thread(chain.invoke, variables)
+    except Exception:
+        # 只有请求层面的失败计入熔断。
+        # JSON 解析失败发生在这之后（调用其实成功了），属于输出质量问题，
+        # 把它算作供应商故障会让"模型偶尔答得不规范"直接熔断，反而降低可用性。
+        circuit_breaker.record_failure()
+        raise
+    circuit_breaker.record_success()
     latency_ms = int((time.time() - started) * 1000)
     in_tok, out_tok = _extract_usage(msg)
     cost = budget.cost_of_call(in_tok, out_tok)
@@ -208,6 +226,16 @@ async def invoke_json(prompt_text: str, variables: Dict[str, Any],
     except budget.BudgetExceeded:
         # 预算耗尽：不写调用日志（没真正发生调用），由工作流转人工
         raise
+    except circuit_breaker.CircuitOpen as e:
+        # 熔断：同样没发出请求，单独记一种状态，别混进 failed
+        logger.warning("LLM 熔断中，本次跳过并降级",
+                       extra={"call_site": call_site, "status": _STATUS_CIRCUIT})
+        _write_log(call_site=call_site, model="?", base_url="",
+                   input_tokens=None, output_tokens=None, cost=0.0,
+                   latency_ms=0, status=_STATUS_CIRCUIT, degraded=True,
+                   prompt_text=prompt_text, candidate_id=candidate_id,
+                   error=str(e)[:200])
+        return default
     except Exception as e:
         from src.services.llm_json import extract_llm_error
         detail = extract_llm_error(e)
@@ -258,6 +286,17 @@ async def invoke_text(prompt_text: str, variables: Dict[str, Any],
                                       candidate_id, client)
     except budget.BudgetExceeded:
         raise
+    except circuit_breaker.CircuitOpen as e:
+        logger.warning("LLM 熔断中，文本调用跳过并降级",
+                       extra={"call_site": call_site, "status": _STATUS_CIRCUIT})
+        _write_log(call_site=call_site, model="?", base_url="",
+                   input_tokens=None, output_tokens=None, cost=0.0,
+                   latency_ms=0, status=_STATUS_CIRCUIT, degraded=True,
+                   prompt_text=prompt_text, candidate_id=candidate_id,
+                   error=str(e)[:200])
+        if raise_on_error:
+            raise
+        return default
     except Exception as e:
         from src.services.llm_json import extract_llm_error
         detail = extract_llm_error(e)
