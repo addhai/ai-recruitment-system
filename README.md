@@ -198,9 +198,25 @@ LangGraph 的挂起状态（等待问卷/面试的 interrupt）存在哪，由 `
 
 GitHub Actions（`.github/workflows/ci.yml`）在每次 `push` / `pull_request` 触发，三阶段门禁：
 
-1. **frontend** — `npm ci` + `npm run build`（tsc 类型检查 + Vite 构建）
+1. **frontend** — `npm ci` + `npm test`（vitest）+ `npm run build`（tsc 类型检查 + Vite 构建）
 2. **backend** — 安装依赖 + `pytest -q --timeout=120`
 3. **docker-build** — `docker compose build` 真实验证 api-service 与 frontend 镜像可构建
+
+### 前端单测
+
+```bash
+cd frontend
+npm test          # vitest run
+npm run test:watch
+```
+
+覆盖 `src/lib/` 下的纯逻辑：`format.ts`（币种符号/金额格式）、`sse.ts`（通知解析）、
+`authErrors.ts`（登录失败分流）。这三块都是"错了只会静默给出误导性界面"的地方——
+币种猜错等于谎报金额、SSE 握手被当业务通知会弹出原始 JSON、登录报错误判会把排查
+方向带到账号上。它们此前内联在组件里，只能靠人工看界面发现。
+
+组件现在从 `src/lib/` 引用这些逻辑，测试覆盖的就是真实运行的代码而不是副本。
+组件本身的渲染测试暂未引入（那需要 jsdom + testing-library），有需求时再加。
 
 ## 权限模型
 
@@ -353,6 +369,37 @@ LLM_LOG_RETENTION_DAYS=90
 **并发闸门**：`LLM_MAX_CONCURRENCY` 限制同时在途的调用数（默认 8，0 = 不限）。
 批量筛简历时 N 个候选人 × 每人 4~8 次调用会瞬间放大请求量，撞上供应商并发上限后
 虽能靠重试兜住，但延迟与失败率都会被推高。限的是我们自己的发散度。
+
+### 熔断
+
+供应商整体故障（宕机、网络不通、持续 5xx）时，每个调用仍要耗完自己的重试预算才降级；
+一次简历评估 4~8 次调用串起来就是几分钟纯等待。`src/services/circuit_breaker.py` 让它快速失败：
+
+```
+closed --连续失败达阈值--> open
+open --冷却到期--> half_open（只放一个探针）
+half_open --探针成功--> closed ；--探针失败--> open（重新计时）
+```
+
+| 配置项 | 默认 |
+| --- | --- |
+| `LLM_CIRCUIT_BREAKER_ENABLED` | true |
+| `LLM_CIRCUIT_FAILURE_THRESHOLD` | 5（连续失败次数） |
+| `LLM_CIRCUIT_OPEN_SECONDS` | 60（冷却时长） |
+
+**「什么才算失败」比熔断本身更容易做错**，所以单独说明：
+
+- **只计请求层面的失败**（连不上、超时、5xx、429）。
+- **JSON 解析失败不计**：模型答了，只是答得不是合法 JSON。这是输出质量问题，
+  调温度/改 prompt 才是解法。算作供应商故障会让"模型偶尔不听话"直接熔断，
+  反而把可用性做低。
+- **预算耗尽不计**：根本没发请求。
+- 熔断时的埋点状态是 `circuit_open`，与 `failed` 分开记录——前者是"我们主动不发"，
+  后者是"供应商返回了错误"，混在一起读会把成本页的失败率看错。
+- half_open 只放一个探针，避免冷却刚到期就把积压请求一起打过去——那正是刚恢复的
+  供应商最扛不住的时刻。
+
+当前熔断状态可在 `/llm-stats/summary` 的 `circuit` 字段查看。
 
 超限行为（`halt`）：停止后续 LLM 调用，候选人转入「待人工评估」（`pending_manual`），
 **不产出任何招聘决策**；中断前已算出的评分保留不回滚——预算耗尽不是数据错误，

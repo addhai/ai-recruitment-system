@@ -8,6 +8,12 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [react()],
+    // 单测只覆盖纯函数（src/lib/），没有 DOM 依赖，用 node 环境即可，
+    // 不必引入 jsdom / testing-library——那套在有组件测试需求时再加。
+    test: {
+      environment: 'node',
+      include: ['src/**/*.test.ts'],
+    },
     server: {
       proxy: {
         // 本地开发时代理 /api 到后端 8000，并去掉 /api 前缀对齐后端真实路由。

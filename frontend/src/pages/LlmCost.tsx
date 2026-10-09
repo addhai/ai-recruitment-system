@@ -2,23 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Coins, RefreshCw, AlertTriangle, Loader2, X } from 'lucide-react';
 import type { LlmStats, LlmCallRow } from '../services/llmStats';
 import { getLlmStats, getRecentLlmCalls } from '../services/llmStats';
-
-const fmtNum = (n: number | null | undefined) =>
-  n === null || n === undefined ? '-' : n.toLocaleString('zh-CN');
-
-/** 币种符号：未知币种直接显示代码，不要猜成 $ —— 猜错等于谎报金额 */
-const currencySymbol = (cur: string | null | undefined) => {
-  const c = (cur || '').toUpperCase();
-  if (c === 'CNY' || c === 'RMB') return '¥';
-  if (c === 'USD') return '$';
-  if (c === 'EUR') return '€';
-  return c ? `${c} ` : '';
-};
-
-const fmtCost = (n: number | null | undefined, cur?: string | null) =>
-  n === null || n === undefined
-    ? '-'
-    : `${currencySymbol(cur)}${Number(n).toFixed(4)}`;
+import { fmtCost, fmtNum } from '../lib/format';
 
 const LlmCost: React.FC = () => {
   const [days, setDays] = useState(7);

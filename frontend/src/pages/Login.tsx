@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Briefcase, Lock, User } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { describeLoginError } from '../lib/authErrors';
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -29,15 +30,9 @@ const Login: React.FC = () => {
     try {
       await login({ username, password });
       navigate('/');
-    } catch (err: any) {
-      // 区分"服务没起"和"凭据不对"：混成一句话会把排查带偏
-      if (err?.offline) {
-        setError('无法连接到服务器。请确认后端已启动（默认 127.0.0.1:8000）后重试。');
-      } else if (err?.status === 401) {
-        setError('用户名或密码错误');
-      } else {
-        setError(err?.message || '登录失败');
-      }
+    } catch (err) {
+      // 分流逻辑住在 lib/authErrors.ts（有单测）：混成一句话会把排查带偏
+      setError(describeLoginError(err));
     } finally {
       setLoading(false);
     }
