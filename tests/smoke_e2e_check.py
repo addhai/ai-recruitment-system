@@ -12,6 +12,8 @@ import time
 
 import httpx
 
+import smoke_common
+
 BASE = "http://127.0.0.1:8000"
 STAMP = str(int(time.time()))
 USERNAME = f"smoke_{STAMP}"
@@ -29,11 +31,20 @@ def record(name, ok, detail=""):
 def main():
     with httpx.Client(base_url=BASE, timeout=180.0) as c:
         # ---------- 认证 ----------
+        # 注册必须由管理员发起：该端点曾经完全无鉴权，任何人都能自助注册成 hr，
+        # 而 hr 能读候选人简历（PII）。这里同时把"匿名注册被拒"作为冒烟项。
+        r = c.post("/auth/register", json={
+            "username": f"anon_{STAMP}", "email": f"anon_{STAMP}@example.com",
+            "password": "Smoke@12345", "role": "hr",
+        })
+        record("POST /auth/register 匿名应被拒", r.status_code in (401, 403),
+               f"{r.status_code}")
+
         r = c.post("/auth/register", json={
             "username": USERNAME, "email": f"{USERNAME}@example.com",
             "password": "Smoke@12345", "full_name": "冒烟测试员", "role": "hr",
-        })
-        record("POST /auth/register", r.status_code == 200, f"{r.status_code}")
+        }, headers=smoke_common.admin_headers(c))
+        record("POST /auth/register 管理员建号", r.status_code == 200, f"{r.status_code}")
         if r.status_code != 200:
             print("注册失败，终止")
             return 1

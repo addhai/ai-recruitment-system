@@ -30,24 +30,13 @@ def client():
 
 @pytest.fixture
 def auth_headers(client):
-    """注册一个普通用户并返回其鉴权头，供需要登录的接口测试使用。"""
-    username = f"tester_{os.urandom(3).hex()}"
-    email = f"{username}@example.com"
-    client.post(
-        "/auth/register",
-        json={
-            "username": username,
-            "email": email,
-            "password": "testpass123",
-            "full_name": "Test User",
-            "role": "hr",
-        },
-    )
-    resp = client.post(
-        "/auth/login", data={"username": username, "password": "testpass123"}
-    )
-    token = resp.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    """造一个 hr 账号并返回其鉴权头，供需要登录的接口测试使用。
+
+    直接写库造账号，不走 /auth/register——该端点现在需要管理员权限，
+    且造测试数据本就不该依赖被测的生产端点（见 tests/helpers.py 的说明）。
+    """
+    from tests.helpers import login_headers
+    return login_headers(client, role="hr")
 
 
 def teardown_module(module):

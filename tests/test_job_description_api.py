@@ -11,6 +11,7 @@ import pytest
 
 from src.models.database import SessionLocal, JobDescription, Candidate, TalentPool, Evaluation
 from src.services import job_parser as jp
+from tests.helpers import login_headers
 
 
 @pytest.fixture
@@ -275,13 +276,7 @@ class TestReviewQueue:
 
     def test_viewer_cannot_review(self, client):
         """只有 hr/admin 能裁决"""
-        import uuid
-        u = f"viewer_{uuid.uuid4().hex[:8]}"
-        client.post("/auth/register", json={"username": u, "email": f"{u}@t.com",
-                                            "password": "testpass123", "role": "viewer"})
-        tok = client.post("/auth/login", data={"username": u, "password": "testpass123"}
-                          ).json()["access_token"]
-        headers = {"Authorization": f"Bearer {tok}"}
+        headers = login_headers(client, role="viewer")
         cid = self._make_pending("无权限候选人")
         r = client.post(f"/reviews/candidates/{cid}", json={"decision": "approve"}, headers=headers)
         assert r.status_code == 403

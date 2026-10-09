@@ -10,6 +10,8 @@ import time
 
 import httpx
 
+import smoke_common
+
 BASE = "http://127.0.0.1:8000"
 
 # 原文未写价值观的岗位（按标题前缀匹配）
@@ -26,7 +28,7 @@ def main():
     with httpx.Client(base_url=BASE, timeout=600.0) as c:
         c.post("/auth/register", json={
             "username": u, "email": f"{u}@example.com",
-            "password": "Smoke@12345", "full_name": "标记不限制", "role": "hr"})
+            "password": "Smoke@12345", "full_name": "标记不限制", "role": "hr"}, headers=smoke_common.admin_headers(c))
         tok = c.post("/auth/login", data={"username": u, "password": "Smoke@12345"}).json()["access_token"]
         c.headers.update({"Authorization": f"Bearer {tok}"})
 

@@ -14,17 +14,16 @@ import uuid
 import pytest
 
 from src.models.database import SessionLocal, Candidate
+from tests.helpers import admin_headers, create_user, login_headers
 
 
 def _login(client, role: str):
-    u = f"{role}_{uuid.uuid4().hex[:8]}"
-    client.post("/auth/register", json={
-        "username": u, "email": f"{u}@t.com", "password": "testpass123",
-        "full_name": f"测试{role}", "role": role,
-    })
-    r = client.post("/auth/login", data={"username": u, "password": "testpass123"})
-    assert r.status_code == 200
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    """造一个指定角色账号并登录（直接写库，不走 /auth/register）。
+
+    以前靠公开注册接口造账号，于是"注册无需鉴权"被当成预期行为固化进了用例；
+    现在注册需要管理员权限（见 tests/helpers.py 的说明）。
+    """
+    return login_headers(client, role=role)
 
 
 @pytest.fixture
@@ -227,13 +226,17 @@ class TestAllRolesResources:
 
 # ================================================================ 认证接口不受影响
 class TestAuthEndpointsUnaffected:
-    def test_register_and_login_public(self, client):
+    def test_register_is_not_public(self, client):
+        """回归：注册端点不得匿名可用。
+
+        它曾经完全无鉴权，任何人都能自助注册成 `hr`——而 `hr` 能读候选人简历（PII）、
+        做招聘裁决、看成本数据。这个用例以前断言的是相反的行为（"公开注册是预期"），
+        因为测试自己需要它来批量造账号。
+        """
         u = f"pub_{uuid.uuid4().hex[:8]}"
         assert client.post("/auth/register", json={
             "username": u, "email": f"{u}@t.com", "password": "testpass123",
-        }).status_code == 200
-        assert client.post("/auth/login",
-                           data={"username": u, "password": "testpass123"}).status_code == 200
+        }).status_code in (401, 403)
 
     @pytest.mark.parametrize("fixture", ["interviewer", "viewer"])
     def test_users_me_works_for_all_roles(self, client, request, fixture):
@@ -241,13 +244,21 @@ class TestAuthEndpointsUnaffected:
         r = client.get("/auth/users/me", headers=request.getfixturevalue(fixture))
         assert r.status_code == 200
 
-    def test_self_register_cannot_escalate_to_admin(self, client):
-        """自注册不得拿到 admin 角色"""
+    def test_non_admin_cannot_create_admin(self, client):
+        """非管理员不能建号，更不能造出 admin"""
         u = f"esc_{uuid.uuid4().hex[:8]}"
-        client.post("/auth/register", json={
-            "username": u, "email": f"{u}@t.com", "password": "testpass123", "role": "admin",
-        })
-        r = client.post("/auth/login", data={"username": u, "password": "testpass123"})
-        me = client.get("/auth/users/me",
-                        headers={"Authorization": f"Bearer {r.json()['access_token']}"})
-        assert me.json()["role"] == "viewer", "自注册申请 admin 应被降级"
+        r = client.post("/auth/register", json={
+            "username": u, "email": f"{u}@t.com", "password": "testpass123",
+            "role": "admin",
+        }, headers=_login(client, "hr"))
+        assert r.status_code == 403
+
+    def test_admin_can_create_admin(self, client):
+        """管理员建号可以指派 admin（口径：建号是管理员职责）"""
+        u = f"adm_{uuid.uuid4().hex[:8]}"
+        r = client.post("/auth/register", json={
+            "username": u, "email": f"{u}@t.com", "password": "testpass123",
+            "role": "admin",
+        }, headers=admin_headers(client))
+        assert r.status_code == 200
+        assert r.json()["role"] == "admin"

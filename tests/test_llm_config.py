@@ -14,6 +14,7 @@ import pytest
 
 from src.services import llm_config
 from src.models.database import SessionLocal, LLMSettings
+from tests.helpers import login_headers
 
 _CN = timezone(timedelta(hours=8))
 
@@ -203,13 +204,7 @@ class TestPresetsAndPermissions:
         assert "官方" in body["note"]
 
     def test_admin_required(self, client):
-        import uuid
-        u = f"llmviewer_{uuid.uuid4().hex[:8]}"
-        client.post("/auth/register", json={"username": u, "email": f"{u}@t.com",
-                                            "password": "testpass123", "role": "hr"})
-        tok = client.post("/auth/login", data={"username": u, "password": "testpass123"}
-                          ).json()["access_token"]
-        h = {"Authorization": f"Bearer {tok}"}
+        h = login_headers(client, role="hr")
         # HR 也不行——模型配置涉及密钥与成本口径，收口到管理员
         assert client.get("/llm-config", headers=h).status_code == 403
         assert client.put("/llm-config", json={"model": "x"}, headers=h).status_code == 403

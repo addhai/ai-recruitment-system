@@ -133,6 +133,15 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
 
+    # ---------------------------------------------------------------- 登录限流
+    # /auth/login 是唯一无需凭据即可调用的写路径，且种子口令是弱口令，
+    # 必须有失败计数。按用户名与来源 IP 两个维度记（只记用户名挡不住撞库）。
+    LOGIN_MAX_FAILED_PER_USER: int = 5
+    # IP 阈值放宽：办公室共用出口 IP 不应因个别人输错密码被整体锁住
+    LOGIN_MAX_FAILED_PER_IP: int = 20
+    LOGIN_FAILURE_WINDOW_SECONDS: int = 900     # 失败计数窗口 15 分钟
+    LOGIN_LOCKOUT_SECONDS: int = 900            # 触发后锁定 15 分钟
+
     class Config:
         env_file = ".env"
 

@@ -10,18 +10,16 @@ import uuid
 import pytest
 
 from src.models.database import SessionLocal, JobDescription, Position
+from tests.helpers import login_headers
 
 
 def _login(client, role: str):
-    """注册指定角色的用户并返回其鉴权头"""
-    u = f"{role}_{uuid.uuid4().hex[:8]}"
-    client.post("/auth/register", json={
-        "username": u, "email": f"{u}@t.com", "password": "testpass123",
-        "full_name": f"测试{role}", "role": role,
-    })
-    r = client.post("/auth/login", data={"username": u, "password": "testpass123"})
-    assert r.status_code == 200, r.text
-    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+    """造一个指定角色账号并登录（直接写库，不走 /auth/register）。
+
+    注册接口现在需要管理员权限：它曾经完全无鉴权，任何人都能自助注册成 `hr`。
+    测试造数据不该依赖被测的生产端点（见 tests/helpers.py）。
+    """
+    return login_headers(client, role=role)
 
 
 @pytest.fixture

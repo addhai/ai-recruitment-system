@@ -1,54 +1,80 @@
 """API 冒烟与鉴权测试。"""
 import os
 
+from tests.helpers import admin_headers, create_user
+
 
 def test_root_endpoint(client):
     resp = client.get("/")
     assert resp.status_code == 200
 
 
-def test_register_normal_user(client):
-    username = f"u_{os.urandom(3).hex()}"
+def test_register_requires_admin(client):
+    """注册必须由管理员发起。
+
+    回归背景：该端点曾经完全无鉴权，任何人都能自助注册成 `hr`，
+    而 `hr` 能读候选人简历（PII）、做招聘裁决、看成本数据。
+    """
     resp = client.post(
         "/auth/register",
-        json={
-            "username": username,
-            "email": f"{username}@example.com",
-            "password": "pass12345",
-            "role": "hr",
-        },
+        json={"username": f"u_{os.urandom(3).hex()}",
+              "email": f"u_{os.urandom(3).hex()}@example.com",
+              "password": "pass12345", "role": "hr"},
     )
-    assert resp.status_code == 200
-    assert resp.json()["username"] == username
+    assert resp.status_code in (401, 403), "匿名注册必须被拒"
 
 
-def test_register_admin_role_falls_back_to_viewer(client):
-    """Phase 2 修复：自注册禁止成为 admin，应回退为 viewer。"""
-    username = f"admin_{os.urandom(3).hex()}"
+def test_register_rejects_non_admin_role_holder(client):
+    """hr/viewer 也不能建号——建号是管理员职责"""
+    for role in ("hr", "viewer", "interviewer"):
+        with_h = _login_as(client, role)
+        resp = client.post(
+            "/auth/register",
+            json={"username": f"x_{os.urandom(3).hex()}",
+                  "email": f"x_{os.urandom(3).hex()}@example.com",
+                  "password": "pass12345", "role": "viewer"},
+            headers=with_h,
+        )
+        assert resp.status_code == 403, f"{role} 不应能建号"
+
+
+def _login_as(client, role):
+    """造一个指定角色账号并返回鉴权头（直接写库，不走注册接口）"""
+    username = create_user(role=role)
+    r = client.post("/auth/login",
+                    data={"username": username, "password": "testpass123"})
+    assert r.status_code == 200, r.text
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+def test_admin_can_register_any_valid_role(client):
+    """管理员可以指派任意合法角色（含 admin）"""
+    for role in ("admin", "hr", "interviewer", "viewer"):
+        username = f"u_{role}_{os.urandom(3).hex()}"
+        resp = client.post(
+            "/auth/register",
+            json={"username": username, "email": f"{username}@example.com",
+                  "password": "pass12345", "role": role},
+            headers=admin_headers(client),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["role"] == role
+
+
+def test_admin_register_rejects_invalid_role(client):
+    """非法角色直接拒绝，而不是悄悄降级——否则"填了没生效"很难查"""
     resp = client.post(
         "/auth/register",
-        json={
-            "username": username,
-            "email": f"{username}@example.com",
-            "password": "pass12345",
-            "role": "admin",
-        },
+        json={"username": f"u_{os.urandom(3).hex()}",
+              "email": f"{os.urandom(3).hex()}@example.com",
+              "password": "pass12345", "role": "root"},
+        headers=admin_headers(client),
     )
-    assert resp.status_code == 200
-    assert resp.json()["role"] == "viewer"
+    assert resp.status_code == 400
 
 
 def test_login_returns_token(client):
-    username = f"login_{os.urandom(3).hex()}"
-    client.post(
-        "/auth/register",
-        json={
-            "username": username,
-            "email": f"{username}@example.com",
-            "password": "pass12345",
-            "role": "hr",
-        },
-    )
+    username = create_user(role="hr", password="pass12345")
     resp = client.post(
         "/auth/login", data={"username": username, "password": "pass12345"}
     )

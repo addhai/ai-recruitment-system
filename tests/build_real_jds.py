@@ -14,6 +14,8 @@ sys.path.insert(0, ".")
 
 import httpx
 
+import smoke_common
+
 BASE = "http://127.0.0.1:8000"
 
 # ---------------------------------------------------------------- 岗位 JD 内容
@@ -224,7 +226,7 @@ def main():
                 "title": pos_info["title"],
                 "department": pos_info.get("department"),
                 "headcount": pos_info.get("headcount"),
-            })
+            }, headers=smoke_common.admin_headers(c))
             if r.status_code != 200:
                 print(f"   岗位创建失败 {r.status_code}: {r.text[:120]}")
                 fail += 1

@@ -15,6 +15,8 @@ import time
 
 import httpx
 
+import smoke_common
+
 BASE = "http://127.0.0.1:8000"
 STAMP = str(int(time.time()))
 USERNAME = f"wf_{STAMP}"
@@ -256,7 +258,7 @@ def main():
         c.post("/auth/register", json={
             "username": USERNAME, "email": f"{USERNAME}@example.com",
             "password": "Smoke@12345", "full_name": "工作流验证", "role": "hr",
-        })
+        }, headers=smoke_common.admin_headers(c))
         r = c.post("/auth/login", data={"username": USERNAME, "password": "Smoke@12345"})
         token = r.json()["access_token"]
         c.headers.update({"Authorization": f"Bearer {token}"})

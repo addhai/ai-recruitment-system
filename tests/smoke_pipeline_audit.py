@@ -12,6 +12,8 @@ import time
 
 import httpx
 
+import smoke_common
+
 BASE = "http://127.0.0.1:8000"
 PDF = sys.argv[1] if len(sys.argv) > 1 else None
 POSITION = sys.argv[2] if len(sys.argv) > 2 else "信息科技岗（应用系统开发/数据分析建模/运维/信息安全管理）"
@@ -163,7 +165,7 @@ def main():
         c.post("/auth/register", json={
             "username": USERNAME, "email": f"{USERNAME}@example.com",
             "password": "Smoke@12345", "full_name": "链路体检", "role": "hr",
-        })
+        }, headers=smoke_common.admin_headers(c))
         token = c.post("/auth/login",
                        data={"username": USERNAME, "password": "Smoke@12345"}).json()["access_token"]
         c.headers.update({"Authorization": f"Bearer {token}"})

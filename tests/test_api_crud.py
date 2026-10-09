@@ -8,6 +8,8 @@ import os
 
 import pytest
 
+from tests.helpers import login_headers
+
 
 # ---------------------------------------------------------------- 工具
 def _create_candidate(client, headers, name="API测试", position="Python工程师") -> int:
@@ -550,13 +552,7 @@ def test_knowledge_base_delete_document(client, auth_headers, kb_offline):
 
 def test_knowledge_base_document_write_requires_hr(client):
     """知识库写入属 HR/管理员动作，查看者不得新增文档"""
-    import uuid as _uuid
-    u = f"kbviewer_{_uuid.uuid4().hex[:8]}"
-    client.post("/auth/register", json={"username": u, "email": f"{u}@t.com",
-                                        "password": "testpass123", "role": "viewer"})
-    tok = client.post("/auth/login", data={"username": u, "password": "testpass123"}
-                      ).json()["access_token"]
-    h = {"Authorization": f"Bearer {tok}"}
+    h = login_headers(client, role="viewer")
     r = client.post("/knowledge-base/documents",
                     json={"title": "越权文档", "content": "查看者不应能写知识库内容。"}, headers=h)
     assert r.status_code == 403

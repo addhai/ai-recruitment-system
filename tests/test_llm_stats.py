@@ -6,6 +6,7 @@ import pytest
 
 from src.models.database import SessionLocal, LLMCallLog
 from src.services import llm_config
+from tests.helpers import login_headers
 
 # 当前生效计价币种：成本聚合只统计与它一致的行
 _CURRENT = llm_config.get_effective_config()["currency"]
@@ -13,12 +14,23 @@ _CURRENT = llm_config.get_effective_config()["currency"]
 _OTHER = "USD" if _CURRENT != "USD" else "CNY"
 
 
-@pytest.fixture(autouse=True)
-def _clean():
-    yield
+def _purge_logs() -> None:
     with SessionLocal() as db:
         db.query(LLMCallLog).delete()
         db.commit()
+
+
+@pytest.fixture(autouse=True)
+def _clean():
+    """前置也要清。
+
+    这里断言的是**绝对条数**（如"3+2 条"），所以必须自己保证起始状态为空。
+    只在结束时清理会依赖"前面没有别的测试文件留下埋点行"——那属于别人是否讲卫生，
+    而别的文件确实会留下（如 JD 解析链路在模型不可用时会写一条 failed 埋点）。
+    """
+    _purge_logs()
+    yield
+    _purge_logs()
 
 
 def _seed(callsite, n=1, cost=0.01, status="ok", degraded=False, tokens=(1000, 200),
@@ -231,20 +243,10 @@ class TestPermissions:
 
     def test_viewer_forbidden(self, client):
         """成本数据属敏感运营信息，只对 HR/管理员开放"""
-        u = f"viewer_{uuid.uuid4().hex[:8]}"
-        client.post("/auth/register", json={"username": u, "email": f"{u}@t.com",
-                                            "password": "testpass123", "role": "viewer"})
-        tok = client.post("/auth/login", data={"username": u, "password": "testpass123"}
-                          ).json()["access_token"]
-        h = {"Authorization": f"Bearer {tok}"}
+        h = login_headers(client, role="viewer")
         assert client.get("/llm-stats/summary", headers=h).status_code == 403
         assert client.get("/llm-stats/calls", headers=h).status_code == 403
 
     def test_interviewer_forbidden(self, client):
-        u = f"itv_{uuid.uuid4().hex[:8]}"
-        client.post("/auth/register", json={"username": u, "email": f"{u}@t.com",
-                                            "password": "testpass123", "role": "interviewer"})
-        tok = client.post("/auth/login", data={"username": u, "password": "testpass123"}
-                          ).json()["access_token"]
-        h = {"Authorization": f"Bearer {tok}"}
+        h = login_headers(client, role="interviewer")
         assert client.get("/llm-stats/summary", headers=h).status_code == 403
