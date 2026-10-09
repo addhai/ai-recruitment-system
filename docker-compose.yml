@@ -19,7 +19,9 @@ services:
     volumes:
       # 向量库持久化（Chroma），容器重建不丢索引
       - chroma_data:/app/src/data/chroma
-      # LangGraph 挂起状态持久化（等待问卷/面试的 interrupt 状态，丢失则进行中的流程无法 resume）
+      # 仅在 DATABASE_URL 指向 sqlite 时使用：LangGraph 挂起状态存本地文件。
+      # 容器部署下 DATABASE_URL 是 postgres，checkpointer 走 Postgres
+      # （见 src/workflow/runner.py），挂起状态在副本间共享，扩副本不会断链。
       - workflow_data:/app/data
 
   postgres:
@@ -34,7 +36,8 @@ services:
       - recruitment-net
     volumes:
       - pg_data:/var/lib/postgresql/data
-    # 表结构由后端 ORM（SQLAlchemy create_all）首次启动时自动创建，种子用户幂等写入
+    # 表结构由后端启动时自动执行 alembic 迁移（migrations/），种子用户幂等写入。
+    # 首启或升级只需拉新镜像重启，不需要手工跑迁移命令。
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d recruitment"]
       interval: 5s

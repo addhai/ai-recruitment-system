@@ -123,6 +123,55 @@ python tests/smoke_jd_flow.py 简历.pdf      # JD 驱动链路：录入 JD → 
 | `SECRET_KEY` / `JWT_SECRET_KEY` | 安全密钥（**生产务必修改**） |
 | `CORS_ORIGINS` | 前端白名单（已加固，非通配符） |
 
+## 数据库迁移（alembic）
+
+表结构由 `migrations/` 下的迁移脚本定义，**不再用 `create_all`**。
+应用启动时自动执行到最新版本（见 `src/models/database.py` 的 `migrate_database`），
+所以首启与升级都只需重启服务，不需要手工跑迁移命令。
+
+手工操作（排查或离线环境）：
+
+```bash
+alembic upgrade head        # 升级到最新
+alembic current             # 看当前版本
+alembic history             # 看版本历史
+alembic downgrade -1        # 回滚一个版本（create_all 时代做不到）
+alembic check               # 校验"库结构"与"模型定义"是否有差异
+```
+
+新增一处结构变更：
+
+```bash
+alembic revision --autogenerate -m "add xxx column"   # 生成脚本后务必人工过一遍
+alembic upgrade head
+```
+
+`--autogenerate` 出来的脚本**必须人工检查**：它识别不出数据回填、重命名会被当成
+「删列 + 加列」（会丢数据），这类变更要手写成 `op.rename_table` / `op.execute`。
+
+**旧库纳管**：alembic 之前建的库（有业务表但没有 `alembic_version`）会在首次启动时
+自动执行一次历史列变更（`_ensure_columns`）后标记为最新版本，数据不动。
+注意 `alembic.ini` 必须保持**纯 ASCII**——它由 configparser 以系统 locale 编码读取，
+在 zh-CN Windows（GBK）下写入中文会直接让 alembic 崩掉。
+
+## 工作流挂起状态（checkpointer）
+
+LangGraph 的挂起状态（等待问卷/面试的 interrupt）存在哪，由 `DATABASE_URL` 决定：
+
+| `DATABASE_URL` | checkpointer | 多副本 |
+| --- | --- | --- |
+| `postgresql://...` | `AsyncPostgresSaver`（与应用同库） | **可横向扩副本**，挂起状态共享 |
+| `sqlite:///...` | `AsyncSqliteSaver`（`data/workflow_checkpoints.db`） | 单进程 |
+
+这里**不做**「Postgres 连不上就悄悄退回本地文件」的降级：多副本下每个容器各写各的
+本地文件，A 副本启动的流程在 B 副本 resume 会找不到状态，表现为「进行中的流程莫名
+卡住」且日志没有明显错误。postgres 模式连不上就直接报错，让问题在部署阶段暴露。
+
+一个平台限制：**psycopg3 的异步连接不支持 Windows 的 ProactorEventLoop**，而 uvicorn
+在 Windows 上默认就用它。所以 Postgres checkpointer 需要在 Linux/容器内运行
+（docker-compose 即为此环境）；Windows 本地开发把 `DATABASE_URL` 设为 sqlite 即可。
+命中该组合时启动会立刻报出明确原因，而不是等 30 秒连接超时。
+
 ## 项目结构
 
 ```
