@@ -70,6 +70,14 @@ jobs:
       - name: Set up Docker
         uses: docker/setup-docker-action@v4
       - name: Build images
+        # Runner 在海外，强制走上游源。Dockerfile 里默认写的是国内镜像源
+        # （作者在内地，本地构建最快），不覆盖的话每次构建要跨境下载数百 MB，
+        # 实测单次 30~45 分钟。
+        env:
+          APT_MIRROR: deb.debian.org
+          PIP_INDEX: https://pypi.org/simple/
+          PIP_HOST: pypi.org
+          NPM_REGISTRY: https://registry.npmjs.org
         run: docker compose build
 
   # 手动触发的 LLM 质量回归评测（防退化）。

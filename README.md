@@ -86,6 +86,21 @@ docker compose up --build
 - 访问 <http://localhost:3000>（Nginx 将 `/api`、`/sse` 反代到 `api-service:8000`）
 - 编排内含 api-service、PostgreSQL、前端三个服务（`docker-compose.yml`）；Redis / RabbitMQ / Milvus / MinIO 属可选组件，配置项已预留但未默认编排
 
+构建时的 apt / pip / npm 源由 build-arg 控制，**默认是国内镜像源**（内地构建最快）。
+在海外网络下构建请覆盖成上游源，否则每次都要跨境下载数百 MB 依赖：
+
+```bash
+# 海外/CI 构建
+APT_MIRROR=deb.debian.org \
+PIP_INDEX=https://pypi.org/simple/ \
+PIP_HOST=pypi.org \
+NPM_REGISTRY=https://registry.npmjs.org \
+docker compose build
+```
+
+CI 里的 `docker-build` job 就是按上面这组值覆盖的——它此前把国内源写死在 Dockerfile 里，
+单次构建要 30~45 分钟（见「CI」一节）。
+
 ### 方式三：运行测试
 
 **后端单元测试**（使用临时 SQLite，绝不污染 `recruitment.db`）：
@@ -201,6 +216,10 @@ GitHub Actions（`.github/workflows/ci.yml`）在每次 `push` / `pull_request` 
 1. **frontend** — `npm ci` + `npm test`（vitest）+ `npm run build`（tsc 类型检查 + Vite 构建）
 2. **backend** — 安装依赖 + `pytest -q --timeout=120`
 3. **docker-build** — `docker compose build` 真实验证 api-service 与 frontend 镜像可构建
+
+> docker-build 这一步**必须覆盖镜像源为上游源**（见「方式二」）：Dockerfile 里默认写的是
+> 国内镜像源，而 Runner 在海外。之前没覆盖时这一步要跑 30~45 分钟——比另两个 job 加起来
+> 还长一个数量级，其中绝大部分时间花在跨境下载依赖上，并不是在验证什么。
 
 ### 前端单测
 

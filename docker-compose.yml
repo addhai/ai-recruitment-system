@@ -3,6 +3,12 @@ services:
     build:
       context: .
       dockerfile: docker/api/Dockerfile
+      # 镜像源：默认国内源（作者本地构建最快）；CI 在海外，用环境变量覆盖成上游源，
+      # 否则每次构建都要跨境拉几百 MB 依赖（实测 30~45 分钟）。
+      args:
+        APT_MIRROR: ${APT_MIRROR:-mirrors.aliyun.com}
+        PIP_INDEX: ${PIP_INDEX:-https://mirrors.aliyun.com/pypi/simple/}
+        PIP_HOST: ${PIP_HOST:-mirrors.aliyun.com}
     ports:
       - "8000:8000"
     # 密钥与模型配置从宿主机 .env 透传（LLM_API_KEY / EMBEDDING_API_KEY / SECRET_KEY 等）
@@ -48,6 +54,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
     ports:
       - "3000:80"
     networks:
