@@ -1,7 +1,7 @@
 """招聘工作流编排层。
 
 职责：
-1. 管理带 SQLite checkpointer 的 LangGraph 图生命周期（挂起状态跨请求/重启持久化）；
+1. 管理带 checkpointer 的 LangGraph 图生命周期（挂起状态跨请求/重启持久化）；
 2. start_workflow：从简历解析启动，驱动到第一个 interrupt（问卷挂起）或终局；
 3. resume_workflow：人工事件（问卷作答/面试录入）到达后，校验挂起类型并恢复；
 4. 驱动过程中实时推送 SSE 进度并持久化 WorkflowRun，供前端轮询与异常恢复。
@@ -9,7 +9,17 @@
 人机交互协议（resume 时严格校验 wait_type，防止错误事件误恢复他人流程）：
 - await_questionnaire  payload = {"questionnaire_id": int, "responses": {...}}
 - await_interview      payload = {"interview_id": int, "round": int, "score": int, "feedback": str}
+
+**checkpointer 后端按 DATABASE_URL 选择**：
+- postgres：与应用同库，多副本共享同一份挂起状态（横向扩副本的前提）
+- sqlite  ：本地开发用本地文件（单进程）
+
+这里**不做**「postgres 连不上就悄悄退回本地文件」的降级——那正是要修掉的静默断链：
+多副本部署时每个容器各写各的本地文件，A 副本启动的流程在 B 副本 resume 会找不到
+状态，表现为"进行中的流程莫名卡住"，且日志里没有明显错误。所以 postgres 模式下
+缺依赖/连不上就直接报错，让问题在部署阶段暴露。
 """
+import asyncio
 import os
 import time
 import uuid
@@ -29,20 +39,131 @@ from src.sse.notification import notify_workflow_progress
 from src.safety import OutputGuard
 
 _graph = None
-_saver: Optional[AsyncSqliteSaver] = None
+_saver: Optional[Any] = None
+_pool: Optional[Any] = None          # postgres 模式的连接池
+_sqlite_conn: Optional[Any] = None   # sqlite 模式的 aiosqlite 连接
 _CHECKPOINT_DB = os.path.join("data", "workflow_checkpoints.db")
+
+# 连接池上限：每副本最多这么多条 checkpointer 连接
+_PG_POOL_MAX = 10
+
+
+def _is_postgres(url: str) -> bool:
+    """判断连接串是否指向 PostgreSQL（忽略 SQLAlchemy 的 `+driver` 后缀）"""
+    scheme = url.split("://", 1)[0]
+    return scheme.split("+", 1)[0] in ("postgresql", "postgres")
+
+
+def _pg_conninfo(url: str) -> str:
+    """把 SQLAlchemy 风格 URL 转成 psycopg 可用的连接串。
+
+    SQLAlchemy 允许 `postgresql+psycopg2://...` 这种带驱动后缀的写法，psycopg 不认。
+    """
+    scheme, sep, rest = url.partition("://")
+    if not sep:
+        return url
+    return f"{scheme.split('+', 1)[0]}://{rest}"
+
+
+def _loop_is_incompatible(platform_name: str, loop) -> bool:
+    """纯函数：给定平台名与事件循环，判断 psycopg 异步能否使用。
+
+    抽成纯函数是为了可测——否则只能 monkeypatch 全局 `os.name`，
+    那会影响该模块之外所有读 os.name 的代码。
+    """
+    if platform_name != "nt" or loop is None:
+        return False
+    proactor = getattr(asyncio, "ProactorEventLoop", None)
+    return proactor is not None and isinstance(loop, proactor)
+
+
+def _psycopg_incompatible_loop() -> bool:
+    """当前事件循环是否不被 psycopg 异步模式支持。
+
+    psycopg3 的异步连接只支持 SelectorEventLoop；Windows 的默认实现
+    ProactorEventLoop 会直接报错，而 uvicorn 在 Windows 上用的正是 Proactor
+    （见 uvicorn/loops/asyncio.py）。真实部署是 Linux/容器，默认 Selector，不受影响；
+    这里做前置检查是为了**快速失败并说清原因**——否则表现为 30 秒 PoolTimeout，
+    真实原因只出现在连接池的后台日志里，极难定位。
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return _loop_is_incompatible(os.name, loop)
 
 
 async def get_graph():
-    """懒加载编译图（首次调用时初始化异步 checkpointer 连接）"""
-    global _graph, _saver
+    """懒加载编译图（首次调用时初始化 checkpointer）。"""
+    global _graph, _saver, _pool, _sqlite_conn
     if _graph is None:
-        os.makedirs("data", exist_ok=True)
-        conn = await aiosqlite.connect(_CHECKPOINT_DB)
-        _saver = AsyncSqliteSaver(conn)
-        await _saver.setup()
+        if _is_postgres(settings.DATABASE_URL):
+            if _psycopg_incompatible_loop():
+                raise RuntimeError(
+                    "Postgres checkpointer 需要 Selector 事件循环，"
+                    "但当前是 Windows 默认的 ProactorEventLoop（psycopg 异步不支持）。"
+                    "请在 Linux/容器内运行（见 docker-compose.yml），"
+                    "或在启动前改用 SelectorEventLoop。"
+                    "如需在 Windows 上本地开发，把 DATABASE_URL 设为 sqlite 即可。"
+                )
+            # 延迟导入：只装 sqlite 的环境不该被迫依赖 psycopg
+            from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+            from psycopg.rows import dict_row
+            from psycopg_pool import AsyncConnectionPool
+
+            _pool = AsyncConnectionPool(
+                conninfo=_pg_conninfo(settings.DATABASE_URL),
+                open=False,
+                max_size=_PG_POOL_MAX,
+                # 连不上时快点失败，别让人对着 30 秒超时猜
+                timeout=10.0,
+                # autocommit 与 dict_row 是 AsyncPostgresSaver 的硬要求
+                kwargs={"autocommit": True, "row_factory": dict_row,
+                        "connect_timeout": 10},
+            )
+            try:
+                # open() 本身也可能失败（连不上/参数错），必须一起纳入清理范围：
+                # 漏掉它会让池对象残留，其后台任务拖住进程不退出
+                await _pool.open()
+                _saver = AsyncPostgresSaver(_pool)
+                await _saver.setup()
+            except BaseException:
+                # 初始化失败必须关掉池：池内部有后台重连任务，
+                # 不关闭会让进程挂住不退出（表现为"启动卡死而非报错退出"）
+                await _pool.close()
+                _pool = None
+                _saver = None
+                raise
+        else:
+            os.makedirs("data", exist_ok=True)
+            _sqlite_conn = await aiosqlite.connect(_CHECKPOINT_DB)
+            _saver = AsyncSqliteSaver(_sqlite_conn)
+            await _saver.setup()
         _graph = build_recruitment_graph(checkpointer=_saver)
     return _graph
+
+
+async def close_graph() -> None:
+    """释放 checkpointer 资源（应用退出时调用）。
+
+    sqlite 连接也必须显式关闭：aiosqlite 用后台线程转发调用，连接不关时
+    该线程会在事件循环关闭后抛 "Event loop is closed"。
+    """
+    global _graph, _saver, _pool, _sqlite_conn
+    if _pool is not None:
+        try:
+            await _pool.close()
+        except Exception:
+            pass
+    if _sqlite_conn is not None:
+        try:
+            await _sqlite_conn.close()
+        except Exception:
+            pass
+    _pool = None
+    _sqlite_conn = None
+    _saver = None
+    _graph = None
 
 
 async def purge_candidate_workflow_data(candidate_id: int) -> int:

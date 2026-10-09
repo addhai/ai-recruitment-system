@@ -39,6 +39,13 @@ def startup():
     init_db()
 
 
+@app.on_event("shutdown")
+async def shutdown():
+    # postgres checkpointer 用的是连接池，退出时不关会留下悬挂连接
+    from src.workflow import runner
+    await runner.close_graph()
+
+
 @app.get("/")
 def root():
     return {"message": "AI招聘系统 API", "version": "1.0.0"}
