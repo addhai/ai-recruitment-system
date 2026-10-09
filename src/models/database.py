@@ -363,6 +363,30 @@ class LLMSettings(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class Cooldown(Base):
+    """跨副本 / 跨重启共享的「冷却期」记录（登录限流 + LLM 熔断）。
+
+    此前这两处状态只在进程内存里：多副本时各副本独立计数（实际阈值 ≈ 副本数 ×
+    配置值）、进程重启即清零。这里落库消除该局限。
+
+    **为什么用数据库而不是 Redis**：限流/熔断是加固手段，为它引入一个必须高可用的
+    中间件不划算；而数据库本就是部署的硬依赖，且这两个机制写入极少（只在"跨过
+    阈值/熔断"那一刻写一条）、读取也轻（登录路径本就要查 users 表）。
+
+    刻意只存 `until` 而不存计数器：共享记录只表达"这个 key 在什么时刻之前应被
+    拒绝"，不参与计数，因此不需要跨进程的原子递增，也就不存在竞态。复合主键
+    `(kind, key)` 天然保证每个 key 至多一行。
+    """
+    __tablename__ = "cooldowns"
+
+    # kind: login_user / login_ip / llm_circuit …；key: 去前缀后的原值（用户名 / IP）
+    kind = Column(String(32), primary_key=True)
+    key = Column(String(200), primary_key=True)
+    # UTC naive 墙钟（跨进程可比；进程内计数仍用单调钟）
+    until = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 _ensure_tables_done = False
 
 # 项目根目录（src/models/database.py -> 上溯三级）

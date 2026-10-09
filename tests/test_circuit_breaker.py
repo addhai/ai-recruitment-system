@@ -5,32 +5,48 @@ JSON 解析失败、预算耗尽都不算供应商故障——算进去会让"�
 或"今天预算用完了"直接熔断，把可用性做低。
 """
 import asyncio
+from datetime import datetime, timedelta
 
 import pytest
 from langchain_core.messages import AIMessage
 
-from src.services import circuit_breaker, llm_invoke
-from src.models.database import SessionLocal, LLMCallLog
+from src.services import circuit_breaker, llm_invoke, shared_cooldown
+from src.models.database import SessionLocal, LLMCallLog, Cooldown
 
 
 class _Clock:
+    """同时驱动熔断的单调钟与共享记录的 UTC 墙钟。
+
+    共享冷却要跨进程可比，用墙钟；本地状态机用单调钟。只推进一个会让另一个
+    原地不动，从而把 test_half_open_after_cooldown_allows_one_probe 之类的用例
+    变成假失败（本地已解锁、共享却仍拦着）。
+    """
+
     def __init__(self, t=1_000_000.0):
         self.t = t
+        self.utc = datetime(2026, 1, 1, 0, 0, 0)
 
     def __call__(self):
         return self.t
 
+    def now_utc(self):
+        return self.utc
+
     def advance(self, seconds):
         self.t += seconds
+        self.utc += timedelta(seconds=seconds)
 
 
 @pytest.fixture
 def clock(monkeypatch):
     c = _Clock()
     monkeypatch.setattr(circuit_breaker, "_now", c)
+    monkeypatch.setattr(shared_cooldown, "_now_utc", c.now_utc)
     circuit_breaker.reset_for_test()
+    shared_cooldown.reset_for_test()
     yield c
     circuit_breaker.reset_for_test()
+    shared_cooldown.reset_for_test()
 
 
 @pytest.fixture
@@ -136,9 +152,11 @@ class TestIntegration:
     def _clean(self):
         from src.services import budget
         circuit_breaker.reset_for_test()
+        shared_cooldown.reset_for_test()
         asyncio.run(budget.reset_cache_for_test())
         yield
         circuit_breaker.reset_for_test()
+        shared_cooldown.reset_for_test()
         with SessionLocal() as db:
             db.query(LLMCallLog).filter(
                 LLMCallLog.call_site == "cb_probe").delete()
@@ -196,6 +214,48 @@ class TestIntegration:
         with pytest.raises(budget.BudgetExceeded):
             self._call(_Boom())
         assert circuit_breaker.snapshot()["state"] == circuit_breaker.CLOSED
+
+
+class TestSharedCooldown:
+    """共享熔断记录：让熔断跨副本、跨重启生效。
+
+    本地状态机仍是判定主体；这些用例确认"另一个副本写下的记录"能在本地内存
+    已清空时快速失败，同时不污染本地状态机（否则会误耗 half_open 探针名额）。
+    """
+
+    def test_other_replica_open_blocks_locally(self, clock, cfg):
+        """另一个副本的共享熔断记录，使本地（内存已清空）allow() 返回 False。"""
+        shared_cooldown.mark("llm_circuit", "default",
+                             circuit_breaker.settings.LLM_CIRCUIT_OPEN_SECONDS)
+        circuit_breaker.reset_for_test()
+        assert circuit_breaker.allow() is False
+        # 关键：共享拦截不该改写本地状态机（没消耗本地 half_open 探针名额）
+        assert circuit_breaker.snapshot()["state"] == circuit_breaker.CLOSED
+
+    def test_shared_record_expiry_restores_local_flow(self, clock, cfg):
+        """共享冷却到期后，本地状态机照原逻辑走（CLOSED 放行）。"""
+        shared_cooldown.mark("llm_circuit", "default", 60)
+        circuit_breaker.reset_for_test()
+        assert circuit_breaker.allow() is False
+        clock.advance(61)
+        assert circuit_breaker.allow() is True
+
+    def test_disabled_breaker_ignores_shared_record(self, clock, cfg, monkeypatch):
+        """关掉熔断（ENABLED=False）时共享记录不能影响 allow()，否则开关失效。"""
+        shared_cooldown.mark("llm_circuit", "default", 60)
+        circuit_breaker.reset_for_test()
+        monkeypatch.setattr(circuit_breaker.settings,
+                            "LLM_CIRCUIT_BREAKER_ENABLED", False)
+        assert circuit_breaker.allow() is True
+
+    def test_trigger_writes_shared_row(self, clock, cfg):
+        """确认触发熔断确实在 cooldowns 表留下了一行。"""
+        for _ in range(3):
+            circuit_breaker.record_failure()
+        with SessionLocal() as db:
+            rows = (db.query(Cooldown)
+                    .filter(Cooldown.kind == "llm_circuit").all())
+        assert len(rows) == 1
 
 
 def _async_ret(value):

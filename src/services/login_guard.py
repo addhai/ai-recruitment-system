@@ -17,22 +17,34 @@
    攻击者先撞 5 次，若被锁定就说明该账号存在。
 2. **不在响应里区分"用户不存在"和"密码错误"**——保持现有的统一 401 文案。
 
-## 已知局限（不假装它严密）
+## 多副本 / 重启（当前实现）
 
-状态在**进程内存**里：
-- 多副本部署时各副本独立计数，实际阈值 ≈ 副本数 × 阈值；
-- 进程重启即清零。
+失败计数仍在**进程内存**里（快、无 IO，单进程下判定的就是它）；但一旦某个维度
+跨过阈值，就会向数据库写一条**共享冷却记录**（见 `shared_cooldown`），于是：
+- 多副本部署时，任一副本触发的锁定对其它副本也生效；
+- 进程重启后，内存计数清零，但冷却期内的共享记录仍在，仍会被拦。
 
-要严格生效需要共享存储（Redis/队列）。本项目当前没有引入那类组件，
-且单副本是默认部署形态，所以这里选择"明显提高爆破成本、且不给运维加依赖"的折中。
-真要上多副本时，把 `_failures` 换成 Redis 计数器即可，调用方无需改动。
+## 仍然存在的局限（不假装它严密）
+
+- 共享记录只表达"冷却到某时刻"，**不参与计数**：它不能让多副本的失败次数合并
+  计数，只是把"已触发"的结论广播出去。因此各副本仍需各自累积到各自阈值才会
+  触发（阈值本身不再被放大成 副本数 × 阈值 的效果，因为触发的锁定是共享的）。
+- 数据库不可用时，共享读/写都只记 warning 并退化为**单进程行为**（限流是加固
+  手段，不该因存储故障把登录整体打挂）；此时该进程内的限流照常生效。
 """
+import math
 import threading
 import time
 from collections import deque
-from typing import Deque, Dict, Optional, Tuple
+from typing import Deque, Dict, List, Optional, Tuple
 
 from src.config import settings
+from src.services import shared_cooldown
+
+# 共享记录的维度名：内存 key 形如 u:alice / ip:1.2.3.4，前缀在共享层是冗余的，
+# 由 kind 区分维度，key 存去前缀后的原值。
+_KIND_USER = "login_user"
+_KIND_IP = "login_ip"
 
 # key -> 失败时间戳（单调钟，不受系统时间调整影响）
 _failures: Dict[str, Deque[float]] = {}
@@ -62,6 +74,14 @@ def _ip_key(ip: Optional[str]) -> Optional[str]:
     return f"ip:{ip}" if ip else None
 
 
+def _shared_key(mem_key: str) -> str:
+    """内存 key（u:alice / ip:1.2.3.4）-> 共享 key（alice / 1.2.3.4）。
+
+    共享记录按 kind 区分维度，前缀是冗余的；去掉它让表里存的是可直接解读的原值。
+    """
+    return mem_key.split(":", 1)[1]
+
+
 def _prune(dq: Deque[float], now: float, window: float) -> None:
     while dq and now - dq[0] > window:
         dq.popleft()
@@ -86,6 +106,21 @@ def _state(key: Optional[str], limit: int, window: float,
     return False, 0
 
 
+def _shared_retry(kind: str, mem_key: Optional[str], limit: int) -> Optional[int]:
+    """查共享冷却；命中返回剩余秒数（>=1），未命中或该维度已关闭返回 None。
+
+    先判 `limit > 0`：否则"把阈值配成 0 关掉限流"这个开关会因为别的副本残留的
+    共享记录而失效。查询放锁外，避免持锁做 IO。
+    """
+    if not mem_key or limit <= 0:
+        return None
+    until = shared_cooldown.blocked_until(kind, _shared_key(mem_key))
+    if until is None:
+        return None
+    remaining = (until - shared_cooldown._now_utc()).total_seconds()
+    return max(1, int(math.ceil(remaining)))
+
+
 def check_allowed(username: str, ip: Optional[str] = None) -> None:
     """登录前调用；处于限流窗口内则抛 LoginThrottled。"""
     with _lock:
@@ -100,26 +135,54 @@ def check_allowed(username: str, ip: Optional[str] = None) -> None:
                                     settings.LOGIN_LOCKOUT_SECONDS)
     if blocked:
         raise LoginThrottled(retry)
+    # 本地没拦：再查共享冷却（覆盖"另一个副本已锁定"与"本进程刚重启"两种情况）
+    retry = _shared_retry(_KIND_USER, _user_key(username),
+                          settings.LOGIN_MAX_FAILED_PER_USER)
+    if retry is None:
+        retry = _shared_retry(_KIND_IP, _ip_key(ip),
+                              settings.LOGIN_MAX_FAILED_PER_IP)
+    if retry is not None:
+        raise LoginThrottled(retry)
 
 
 def record_failure(username: str, ip: Optional[str] = None) -> None:
     """一次失败登录。**无论用户名是否存在都要调用**，否则会变成用户枚举探针。"""
     now = _now()
     window = settings.LOGIN_FAILURE_WINDOW_SECONDS
+    dimensions = (
+        (_user_key(username), _KIND_USER, settings.LOGIN_MAX_FAILED_PER_USER),
+        (_ip_key(ip), _KIND_IP, settings.LOGIN_MAX_FAILED_PER_IP),
+    )
+    triggered: List[Tuple[str, str]] = []
     with _lock:
-        for key in (_user_key(username), _ip_key(ip)):
-            if not key:
+        for mem_key, _, _ in dimensions:
+            if not mem_key:
                 continue
-            dq = _failures.setdefault(key, deque())
+            dq = _failures.setdefault(mem_key, deque())
             dq.append(now)
             _prune(dq, now, window)
         _evict_if_needed()
+        # 判定哪些维度已跨过阈值；IO 放到锁外，避免持锁写库
+        for mem_key, kind, limit in dimensions:
+            if not mem_key or limit <= 0:
+                continue
+            blocked, _retry = _state(mem_key, limit, window,
+                                     settings.LOGIN_LOCKOUT_SECONDS)
+            if blocked:
+                triggered.append((kind, _shared_key(mem_key)))
+    # 只把"已经触发"这一事实写进共享存储（不写每一次失败）：
+    # /auth/login 是唯一无鉴权的写路径，逐次写库会把限流变成数据库写放大器。
+    for kind, skey in triggered:
+        shared_cooldown.mark(kind, skey, settings.LOGIN_LOCKOUT_SECONDS)
 
 
 def record_success(username: str, ip: Optional[str] = None) -> None:
     """登录成功：清掉该用户名的失败记录（不清 IP，避免一处成功就洗白整段攻击）"""
     with _lock:
         _failures.pop(_user_key(username), None)
+    # 共享层同样只清用户名维度：IP 维度保持"一次成功不能洗白整段攻击"的语义
+    if settings.LOGIN_MAX_FAILED_PER_USER > 0:
+        shared_cooldown.clear(_KIND_USER, _shared_key(_user_key(username)))
 
 
 def _evict_if_needed() -> None:
