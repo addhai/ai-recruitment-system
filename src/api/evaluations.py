@@ -4,6 +4,7 @@ from typing import List
 from src.models.database import get_db, Evaluation
 from src.models.schemas import EvaluationCreate, EvaluationResponse
 from src.api.auth import get_current_user, require_hr_admin, require_hr_admin_interviewer
+from src.api.pagination import SkipParam, LimitParam
 from src.evaluation import evaluation_tracker
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
@@ -28,6 +29,8 @@ def get_workflow_evaluation_records(
 def list_evaluations(
     candidate_id: int = None,
     dimension: str = None,
+    skip: SkipParam = 0,
+    limit: LimitParam = 100,
     db: Session = Depends(get_db),
     current_user=Depends(require_hr_admin_interviewer)
 ):
@@ -38,7 +41,7 @@ def list_evaluations(
     if dimension:
         query = query.filter(Evaluation.dimension == dimension)
 
-    return query.all()
+    return query.offset(skip).limit(limit).all()
 
 
 @router.get("/{evaluation_id}", response_model=EvaluationResponse)

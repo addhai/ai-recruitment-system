@@ -4,6 +4,7 @@ from typing import List, Dict, Any
 from src.models.database import get_db, Questionnaire, QuestionnaireResponse
 from src.models.schemas import QuestionnaireCreate, QuestionnaireResponseCreate, QuestionnaireResponseResponse
 from src.api.auth import get_current_user, require_hr_admin
+from src.api.pagination import SkipParam, LimitParam
 from src.safety import InputGuard
 
 router = APIRouter(prefix="/questionnaires", tags=["questionnaires"])
@@ -22,8 +23,12 @@ async def _resume_workflow_after_questionnaire(candidate_id: int, questionnaire_
 
 
 @router.get("/", response_model=List[dict])
-def list_questionnaires(db: Session = Depends(get_db), current_user=Depends(require_hr_admin)):
-    questionnaires = db.query(Questionnaire).all()
+def list_questionnaires(skip: SkipParam = 0, limit: LimitParam = 100,
+                        db: Session = Depends(get_db),
+                        current_user=Depends(require_hr_admin)):
+    questionnaires = (db.query(Questionnaire)
+                      .order_by(Questionnaire.id.desc())
+                      .offset(skip).limit(limit).all())
     return [
         {
             "id": q.id,

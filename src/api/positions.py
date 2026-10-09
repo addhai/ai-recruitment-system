@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from src.models.database import get_db, Position, JobDescription, Candidate
 from src.models.schemas import PositionCreate, PositionUpdate, PositionResponse
 from src.api.auth import get_current_user, require_hr_admin
+from src.api.pagination import SkipParam, LimitParam
 
 router = APIRouter(prefix="/positions", tags=["positions"])
 
@@ -31,12 +32,15 @@ def _to_response(p: Position, db: Session) -> PositionResponse:
 
 
 @router.get("/", response_model=List[PositionResponse])
-def list_positions(status: Optional[str] = None, db: Session = Depends(get_db),
+def list_positions(status: Optional[str] = None,
+                   skip: SkipParam = 0, limit: LimitParam = 100,
+                   db: Session = Depends(get_db),
                    current_user=Depends(require_hr_admin)):
     query = db.query(Position)
     if status:
         query = query.filter(Position.status == status)
-    return [_to_response(p, db) for p in query.order_by(Position.id.desc()).all()]
+    rows = query.order_by(Position.id.desc()).offset(skip).limit(limit).all()
+    return [_to_response(p, db) for p in rows]
 
 
 @router.get("/{position_id}", response_model=PositionResponse)

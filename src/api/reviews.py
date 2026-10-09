@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from src.models.database import get_db, Candidate, Evaluation, TalentPool, WorkflowRun
 from src.models.schemas import ReviewDecision
 from src.api.auth import get_current_user, require_hr_admin
+from src.api.pagination import SkipParam, LimitParam
 
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
@@ -31,13 +32,15 @@ def _upsert_pool_tags(db: Session, candidate_id: int, tags: List[str], notes: st
 
 
 @router.get("/")
-def list_pending_reviews(db: Session = Depends(get_db),
+def list_pending_reviews(skip: SkipParam = 0, limit: LimitParam = 100,
+                         db: Session = Depends(get_db),
                          current_user=Depends(require_hr_admin)):
     """待复核候选人列表：带维度分数快照与终局结果，供 HR 批量裁决。"""
     candidates = (
         db.query(Candidate)
         .filter(Candidate.status == "pending_review")
         .order_by(Candidate.updated_at.desc())
+        .offset(skip).limit(limit)
         .all()
     )
     items = []

@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from src.models.database import get_db, Candidate, Resume, WorkflowRun
 from src.models.schemas import CandidateCreate, CandidateUpdate, CandidateResponse, ResumeCreate, ResumeResponse, WorkflowRunResponse
+from src.api.pagination import SkipParam, LimitParam
 from src.api.auth import get_current_user, require_hr_admin, require_hr_admin_interviewer
 from src.safety import InputGuard, OutputGuard
 from src.sse.notification import notify_candidate_added
@@ -26,8 +27,8 @@ router = APIRouter(prefix="/candidates", tags=["candidates"])
 
 @router.get("/", response_model=List[CandidateResponse])
 def list_candidates(
-    skip: int = 0,
-    limit: int = 100,
+    skip: SkipParam = 0,
+    limit: LimitParam = 100,
     status: Optional[str] = None,
     position: Optional[str] = None,
     search: Optional[str] = None,

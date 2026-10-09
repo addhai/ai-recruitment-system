@@ -5,6 +5,7 @@ from datetime import datetime
 from src.models.database import get_db, TalentPool, Candidate
 from src.models.schemas import TalentPoolCreate, TalentPoolResponse
 from src.api.auth import get_current_user, require_hr_admin
+from src.api.pagination import SkipParam, LimitParam
 
 router = APIRouter(prefix="/talent-pool", tags=["talent-pool"])
 
@@ -13,6 +14,8 @@ router = APIRouter(prefix="/talent-pool", tags=["talent-pool"])
 def list_talent_pool(
     status: str = None,
     tag: str = None,
+    skip: SkipParam = 0,
+    limit: LimitParam = 100,
     db: Session = Depends(get_db),
     current_user=Depends(require_hr_admin)
 ):
@@ -23,7 +26,7 @@ def list_talent_pool(
     if tag:
         query = query.filter(TalentPool.tags.any(tag))
     
-    return query.all()
+    return query.offset(skip).limit(limit).all()
 
 
 @router.get("/{pool_id}", response_model=TalentPoolResponse)

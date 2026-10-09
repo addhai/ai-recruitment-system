@@ -4,6 +4,7 @@ from typing import List, Optional
 from datetime import datetime
 from src.models.database import get_db, Interview
 from src.models.schemas import InterviewCreate, InterviewUpdate, InterviewResponse
+from src.api.pagination import SkipParam, LimitParam
 from src.api.auth import get_current_user, require_hr_admin, require_hr_admin_interviewer
 from src.sse.notification import (
     notify_interview_scheduled as notify_sse_interview_scheduled,
@@ -34,8 +35,8 @@ async def _resume_workflow_after_interview(
 
 @router.get("/", response_model=List[InterviewResponse])
 def list_interviews(
-    skip: int = 0,
-    limit: int = 100,
+    skip: SkipParam = 0,
+    limit: LimitParam = 100,
     candidate_id: Optional[int] = None,
     status: Optional[str] = None,
     db: Session = Depends(get_db),

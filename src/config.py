@@ -132,6 +132,9 @@ class Settings(BaseSettings):
 
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
+    # 交互式 API 文档（/docs、/redoc、/openapi.json）默认开启，方便本地联调。
+    # **公网部署请设为 false**：它们会把全部端点、参数与数据模型公开可读。
+    ENABLE_API_DOCS: bool = True
 
     # ---------------------------------------------------------------- 登录限流
     # /auth/login 是唯一无需凭据即可调用的写路径，且种子口令是弱口令，
