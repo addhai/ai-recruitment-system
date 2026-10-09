@@ -27,7 +27,11 @@ def create_user(username: str = None, role: str = "hr",
     with SessionLocal() as db:
         db.add(User(
             username=username,
-            email=email or f"{username}@test.local",
+            # 用 example.com 而不是 test.local —— EmailStr（email-validator）会把
+            # .local / .test / .localhost 当作特殊用途域名拒掉。写库不经过校验，
+            # 但这样造出来的账号一旦走任何经过校验的接口（如管理员改资料）就会 422，
+            # 属于"测试数据本身不合法"的隐患。
+            email=email or f"{username}@example.com",
             password_hash=get_password_hash(password),
             full_name=full_name or f"测试{role}",
             department="测试部",

@@ -23,11 +23,16 @@ class User(Base):
     department = Column(String(50))
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    # 令牌版本：令牌里带签发时的版本号，与它不一致即失效（改密时 +1）。
+    # 令牌版本：令牌里带签发时的版本号，与它不一致即失效（改密/停用时 +1）。
     # 用版本号而不是时间戳比对，是为了绕开精度问题：时间戳方案下"同一秒内签发的
     # 旧令牌"会逃过撤销，而把精度提到微秒又要求 iat 用浮点、与 JWT 的秒级惯例不符。
     # 版本号没有时钟参与，判定是精确的。
     token_version = Column(Integer, default=0, nullable=False, server_default="0")
+    # 是否启用。停用代替删除：interviews.interviewer_id / evaluations.evaluator_id /
+    # questionnaires.created_by 等外键指向本表且未声明 ondelete，
+    # 硬删除在 PostgreSQL 上会直接违反外键（SQLite 默认不强制，两边行为还不一致），
+    # 且会让历史评估变成指向不存在的人——"谁做的评估"必须一直可追溯。
+    is_active = Column(Boolean, default=True, nullable=False, server_default="1")
 
     interviews = relationship("Interview", back_populates="interviewer")
     questionnaires = relationship("Questionnaire", back_populates="created_by_user")

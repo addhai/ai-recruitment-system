@@ -4,6 +4,10 @@ from datetime import datetime
 
 from src.safety import OutputGuard
 
+# 密码最短长度。种子口令 admin123 就是 8 位——这是下限而不是推荐值，
+# 真正的强度要求应由部署方按自身安全基线抬高。
+MIN_PASSWORD_LENGTH = 8
+
 
 class UserCreate(BaseModel):
     username: str
@@ -21,20 +25,34 @@ class UserResponse(BaseModel):
     full_name: Optional[str]
     department: Optional[str]
     role: str
+    is_active: bool = True
     created_at: datetime
 
     class Config:
         from_attributes = True
 
 
+class UserUpdate(BaseModel):
+    """管理员修改用户。全部可选，只传要改的项。
+
+    用户名不可改：它是 JWT 的 sub、也是各表的关联依据，改名会让已签发的令牌
+    与历史记录对不上。要换用户名请新建账号并停用旧的。
+    """
+    email: Optional[EmailStr] = None
+    full_name: Optional[str] = None
+    department: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class AdminPasswordReset(BaseModel):
+    """管理员为用户重置密码（用户忘了密码时的唯一出路）"""
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH)
+
+
 class LoginRequest(BaseModel):
     username: str
     password: str
-
-
-# 密码最短长度。种子口令 admin123 就是 8 位——这是下限而不是推荐值，
-# 真正的强度要求应由部署方按自身安全基线抬高。
-MIN_PASSWORD_LENGTH = 8
 
 
 class PasswordChange(BaseModel):

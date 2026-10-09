@@ -5,11 +5,14 @@ import bcrypt
 import calendar
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
+from typing import List
 from src.models.database import get_db, User
 from src.models.schemas import (UserCreate, UserResponse, LoginRequest,
-                                PasswordChange, TokenResponse)
+                                PasswordChange, TokenResponse,
+                                UserUpdate, AdminPasswordReset)
 from src.config import settings
 from src.services import login_guard
+from src.api.pagination import SkipParam, LimitParam
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -75,6 +78,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
     if user is None:
         raise credentials_exception
     if _token_revoked(payload, user):
+        raise credentials_exception
+    # 停用检查放在这个唯一入口：所有鉴权路径（含 require_roles 守卫）
+    # 都经过这里，不必在每个路由重复判断。
+    if not user.is_active:
         raise credentials_exception
     return user
 
@@ -185,6 +192,15 @@ def login(request: Request,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not user.is_active:
+        # 与"密码错"用同样的 401 文案：否则被停用的人能通过错误信息差异
+        # 判断出"账号存在但被封"，也是一种账号枚举
+        login_guard.record_failure(form_data.username, ip)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     login_guard.record_success(form_data.username, ip)
     # 有效期由 create_access_token 从 settings 取（不再硬编码）
@@ -228,3 +244,94 @@ def change_own_password(body: PasswordChange,
 @router.get("/users/me", response_model=UserResponse)
 def read_users_me(current_user: User = Depends(get_current_active_user)):
     return current_user
+
+
+# ---------------------------------------------------------------- 用户管理
+# 全部 require_admin：建号/改角色/停用都是管理动作。
+# 注意这里**不提供硬删除**，只提供停用——原因见 User.is_active 的注释。
+
+def _other_active_admins(db: Session, exclude_id: int) -> int:
+    return (db.query(User)
+            .filter(User.role == "admin", User.is_active.is_(True),
+                    User.id != exclude_id)
+            .count())
+
+
+def _load_user(db: Session, user_id: int) -> User:
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return user
+
+
+@router.get("/users", response_model=List[UserResponse])
+def list_users(skip: SkipParam = 0, limit: LimitParam = 100,
+               db: Session = Depends(get_db),
+               current_user: User = Depends(require_admin)):
+    """用户列表。**包含已停用账号**——否则管理员看不到自己刚停用的人，
+    会以为操作没生效而重复建号。状态由 is_active 字段区分。"""
+    return (db.query(User).order_by(User.id)
+            .offset(skip).limit(limit).all())
+
+
+@router.put("/users/{user_id}", response_model=UserResponse)
+def update_user(user_id: int, body: UserUpdate,
+                db: Session = Depends(get_db),
+                current_user: User = Depends(require_admin)):
+    """修改用户资料 / 角色 / 启用状态。"""
+    user = _load_user(db, user_id)
+
+    if body.role is not None:
+        if body.role not in VALID_ROLES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"非法角色 {body.role!r}，可选: {', '.join(sorted(VALID_ROLES))}")
+        if user.role == "admin" and body.role != "admin" and \
+                _other_active_admins(db, user.id) == 0:
+            # 否则系统会变成没有人能管模型配置与用户，且无法自救
+            raise HTTPException(status_code=400, detail="不能移除最后一个可用管理员的管理员角色")
+        user.role = body.role
+
+    if body.is_active is not None and body.is_active != user.is_active:
+        if not body.is_active:
+            if user.id == current_user.id:
+                raise HTTPException(status_code=400, detail="不能停用当前登录的账号")
+            if user.role == "admin" and _other_active_admins(db, user.id) == 0:
+                raise HTTPException(status_code=400, detail="不能停用最后一个可用管理员")
+            # 停用要立即生效：令牌版本 +1，已签发的令牌当场作废。
+            # 否则被停用的人还能拿旧令牌继续用到过期为止。
+            user.token_version = (user.token_version or 0) + 1
+        user.is_active = body.is_active
+
+    if body.email is not None:
+        clash = (db.query(User)
+                 .filter(User.email == body.email, User.id != user.id).first())
+        if clash:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        user.email = body.email
+    if body.full_name is not None:
+        user.full_name = body.full_name
+    if body.department is not None:
+        user.department = body.department
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/users/{user_id}/password")
+def reset_user_password(user_id: int, body: AdminPasswordReset,
+                        db: Session = Depends(get_db),
+                        current_user: User = Depends(require_admin)):
+    """管理员为用户重置密码。用户忘记密码时的唯一出路——没有它，
+    账号只能弃用重开，历史评估也就跟着断了。
+
+    同样把令牌版本 +1：重置密码意味着此前所有会话失效。
+    """
+    user = _load_user(db, user_id)
+    user.password_hash = get_password_hash(body.new_password)
+    user.token_version = (user.token_version or 0) + 1
+    db.add(user)
+    db.commit()
+    return {"message": f"已重置 {user.username} 的密码，该用户此前的登录状态已全部失效"}
