@@ -32,6 +32,21 @@ class LoginRequest(BaseModel):
     password: str
 
 
+# 密码最短长度。种子口令 admin123 就是 8 位——这是下限而不是推荐值，
+# 真正的强度要求应由部署方按自身安全基线抬高。
+MIN_PASSWORD_LENGTH = 8
+
+
+class PasswordChange(BaseModel):
+    """改密请求。
+
+    校验放在 schema 层：非法输入应在进入业务逻辑前就被挡掉，
+    而不是先查库、比对旧密码，最后才说"新密码太短"。
+    """
+    old_password: str
+    new_password: str = Field(min_length=MIN_PASSWORD_LENGTH)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

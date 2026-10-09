@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 import bcrypt
+import calendar
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from src.models.database import get_db, User
-from src.models.schemas import UserCreate, UserResponse, LoginRequest, TokenResponse
+from src.models.schemas import (UserCreate, UserResponse, LoginRequest,
+                                PasswordChange, TokenResponse)
 from src.config import settings
 from src.services import login_guard
 
@@ -18,7 +20,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 
 def verify_password(plain_password, hashed_password):
@@ -29,15 +30,32 @@ def get_password_hash(password):
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
+def create_access_token(data: dict, expires_delta: timedelta | None = None,
+                        token_version: int = 0):
+    """签发 JWT。
+
+    带 `tv`（token_version）：令牌撤销靠"令牌里的版本 vs 库里的版本"比对。
+    没有这个字段就无法判断令牌是不是在改密之前签发的。
+
+    有效期默认取自 settings.ACCESS_TOKEN_EXPIRE_MINUTES——此前这里硬编码 30 分钟，
+    导致 .env 里的同名配置**静默失效**（配了 1440 实际仍只活 30 分钟）。
+    """
     to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    now = datetime.utcnow()
+    expire = now + (expires_delta or timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    to_encode.update({"exp": expire, "iat": calendar.timegm(now.utctimetuple()),
+                      "tv": token_version})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def _token_revoked(payload: dict, user: User) -> bool:
+    """令牌是否已被撤销（令牌里的版本与库中不一致）。
+
+    缺 `tv` 的老令牌按版本 0 处理：这样本次上线不会把所有人踢下线，
+    而用户一旦改密（版本 +1）它们立刻失效。
+    """
+    return payload.get("tv", 0) != (user.token_version or 0)
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -55,6 +73,8 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     user = db.query(User).filter(User.username == username).first()
     if user is None:
+        raise credentials_exception
+    if _token_revoked(payload, user):
         raise credentials_exception
     return user
 
@@ -167,11 +187,42 @@ def login(request: Request,
         )
 
     login_guard.record_success(form_data.username, ip)
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    # 有效期由 create_access_token 从 settings 取（不再硬编码）
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
+        data={"sub": user.username}, token_version=user.token_version or 0)
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/users/me/password", response_model=TokenResponse)
+def change_own_password(body: PasswordChange,
+                        db: Session = Depends(get_db),
+                        current_user: User = Depends(get_current_active_user)):
+    """修改自己的密码，并**立即失效此前签发的全部令牌**。
+
+    为什么需要这个端点：JWT 是无状态的、签出去就收不回来。没有改密接口时，
+    一旦密码泄漏或账号被盗，唯一"止血"手段是更换 SECRET_KEY——那会把所有人踢下线。
+
+    现在改密会把 token_version 加一，旧令牌（带旧版本号）即刻失效，
+    含攻击者手上那一份；撤销是 per-user 的，不会影响其他人。
+
+    返回一个新令牌（带新版本号）让当前会话继续可用——否则用户改完密码就得立刻
+    重新登录，体验上会诱导人不去改密码。
+    """
+    if not verify_password(body.old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="当前密码不正确")
+    if body.new_password == body.old_password:
+        raise HTTPException(status_code=400, detail="新密码不能与当前密码相同")
+
+    current_user.password_hash = get_password_hash(body.new_password)
+    current_user.token_version = (current_user.token_version or 0) + 1
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+
+    token = create_access_token(
+        data={"sub": current_user.username},
+        token_version=current_user.token_version)
+    return {"access_token": token, "token_type": "bearer"}
 
 
 @router.get("/users/me", response_model=UserResponse)
