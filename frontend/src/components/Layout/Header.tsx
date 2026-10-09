@@ -31,10 +31,17 @@ const NOTIFICATION_TYPE_LABELS: Record<string, string> = {
   system_message: '系统消息',
 };
 
-// 将 SSE 原始消息解析为通知对象
+// 传输层事件：只表示链路状态，不是业务通知。
+// 后端建连时会发 {"type": "connected"} 确认链路已通（见 src/api/sse.py），
+// 它是握手而不是业务事件，不该弹给用户。
+const TRANSPORT_EVENT_TYPES = new Set(['connected', 'ping', 'heartbeat']);
+
+// 将 SSE 原始消息解析为通知对象；传输层事件返回 null（不产生通知）
 function parseSSEMessage(data: string): SSENotification | null {
   try {
     const msg = JSON.parse(data);
+    if (!msg?.type || TRANSPORT_EVENT_TYPES.has(msg.type)) return null;
+
     const title = NOTIFICATION_TYPE_LABELS[msg.type] || '系统通知';
     let desc = '';
     switch (msg.type) {
@@ -60,7 +67,8 @@ function parseSSEMessage(data: string): SSENotification | null {
         desc = msg.message || '';
         break;
       default:
-        desc = msg.candidate_name || JSON.stringify(msg).slice(0, 80);
+        // 未知业务类型：绝不回退成 JSON.stringify——内部结构不该出现在界面上
+        desc = msg.candidate_name || msg.message || '收到一条系统通知';
     }
     return {
       id: Date.now() + Math.random(),
