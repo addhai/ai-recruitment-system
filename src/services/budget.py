@@ -48,13 +48,14 @@ def pricing_configured() -> bool:
     return llm_config.is_pricing_configured()
 
 
-def cost_of_call(input_tokens, output_tokens):
+def cost_of_call(input_tokens, output_tokens, now=None):
     """按当前生效配置折算本次调用成本（含分时计价）。
 
     返回值的币种由 current_currency() 给出，不固定为美元。
+    now 用于注入时间，使分时计价在不依赖墙上时钟的前提下可测。
     """
     from src.services import llm_config
-    return llm_config.compute_cost(input_tokens, output_tokens)
+    return llm_config.compute_cost(input_tokens, output_tokens, now=now)
 
 
 def current_currency() -> str:

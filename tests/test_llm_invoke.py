@@ -86,6 +86,17 @@ class TestUsageExtraction:
 
 # ================================================================ 成本折算
 class TestCostComputation:
+    @pytest.fixture(autouse=True)
+    def _flat_pricing(self, monkeypatch):
+        """固定为不分时段。
+
+        否则测试结果会随墙上时钟变化：LLM_PEAK_MULTIPLIER > 1 且当前落在
+        高峰时段（北京时间周一至周五 9-12 / 14-18）时成本会翻倍，
+        断言就变成了"跑测试的时刻对不对"。分时计价另有专门用例覆盖。
+        """
+        monkeypatch.setattr(budget.settings, "LLM_PEAK_MULTIPLIER", 1.0)
+        yield
+
     def test_zero_pricing_yields_zero(self, monkeypatch):
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 0.0)
         monkeypatch.setattr(budget.settings, "LLM_OUTPUT_PRICE_PER_MILLION", 0.0)
@@ -94,12 +105,32 @@ class TestCostComputation:
     def test_pricing_applied(self, monkeypatch):
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 2.0)
         monkeypatch.setattr(budget.settings, "LLM_OUTPUT_PRICE_PER_MILLION", 8.0)
-        # 1M input * $2 + 0.5M output * $8 = 2 + 4
+        # 1M input * 2 + 0.5M output * 8 = 2 + 4
         assert budget.cost_of_call(1_000_000, 500_000) == pytest.approx(6.0)
 
     def test_zero_tokens_no_error(self, monkeypatch):
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 2.0)
         assert budget.cost_of_call(None, None) == 0.0
+
+    def test_peak_multiplier_doubles_cost(self, monkeypatch):
+        """高峰时段单价翻倍——用注入时间断言，不依赖跑测试的真实时刻"""
+        from datetime import datetime, timezone, timedelta
+
+        monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 2.0)
+        monkeypatch.setattr(budget.settings, "LLM_OUTPUT_PRICE_PER_MILLION", 8.0)
+        monkeypatch.setattr(budget.settings, "LLM_PEAK_MULTIPLIER", 2.0)
+
+        cn = timezone(timedelta(hours=8))
+        # 2026-10-09 是周五：10:00 北京时间 = 高峰
+        peak = datetime(2026, 10, 9, 10, 0, tzinfo=cn)
+        # 03:00 北京时间 = 空闲
+        idle = datetime(2026, 10, 9, 3, 0, tzinfo=cn)
+        # 周六 10:00 = 全天空闲
+        weekend = datetime(2026, 10, 10, 10, 0, tzinfo=cn)
+
+        assert budget.cost_of_call(1_000_000, 0, now=peak) == pytest.approx(4.0)
+        assert budget.cost_of_call(1_000_000, 0, now=idle) == pytest.approx(2.0)
+        assert budget.cost_of_call(1_000_000, 0, now=weekend) == pytest.approx(2.0)
 
 
 # ================================================================ 预算
@@ -238,6 +269,8 @@ class TestInvokeJsonInstrumentation:
         monkeypatch.setattr(budget.settings, "LLM_INPUT_PRICE_PER_MILLION", 1.0)
         monkeypatch.setattr(budget.settings, "LLM_PRICE_CURRENCY", "CNY")
         monkeypatch.setattr(budget.settings, "LLM_OUTPUT_PRICE_PER_MILLION", 2.0)
+        # 固定为不分时段：否则高峰时段跑测试时成本会翻倍，断言随时刻变化
+        monkeypatch.setattr(budget.settings, "LLM_PEAK_MULTIPLIER", 1.0)
 
         out = asyncio.run(llm_invoke.invoke_json(
             "提示词 {x}", {"x": "v"}, {"score": 0}, "unit_test_site", candidate_id=42))
