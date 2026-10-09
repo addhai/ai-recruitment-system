@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Coins, RefreshCw, AlertTriangle, Loader2 } from 'lucide-react';
+import { Coins, RefreshCw, AlertTriangle, Loader2, X } from 'lucide-react';
 import type { LlmStats, LlmCallRow } from '../services/llmStats';
 import { getLlmStats, getRecentLlmCalls } from '../services/llmStats';
 
@@ -26,11 +26,17 @@ const LlmCost: React.FC = () => {
   const [calls, setCalls] = useState<LlmCallRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // 按工作流运行过滤：点明细里的「运行」即只看那一次简历评估发出的调用。
+  // 走服务端口过滤而不是只筛本地 50 条，保证看到的是该运行的全部调用。
+  const [threadFilter, setThreadFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, c] = await Promise.all([getLlmStats(days), getRecentLlmCalls(50)]);
+      const [s, c] = await Promise.all([
+        getLlmStats(days),
+        getRecentLlmCalls(50, undefined, threadFilter ?? undefined),
+      ]);
       setStats(s);
       setCalls(c);
       setError(null);
@@ -39,7 +45,7 @@ const LlmCost: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [days, threadFilter]);
 
   useEffect(() => {
     load();
@@ -226,7 +232,24 @@ const LlmCost: React.FC = () => {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-3">最近调用</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-slate-800">最近调用</h2>
+              {threadFilter && (
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-500">
+                    只看运行 <code className="bg-slate-100 px-1.5 py-0.5 rounded font-mono">
+                      {threadFilter.slice(0, 12)}…
+                    </code>（{calls.length} 次调用）
+                  </span>
+                  <button
+                    onClick={() => setThreadFilter(null)}
+                    className="flex items-center gap-1 text-blue-600 hover:text-blue-700"
+                  >
+                    <X size={12} /> 清除
+                  </button>
+                </div>
+              )}
+            </div>
             {!calls.length ? (
               <p className="text-slate-400 text-sm">暂无记录。</p>
             ) : (
@@ -236,6 +259,7 @@ const LlmCost: React.FC = () => {
                     <tr>
                       <th className="text-left px-3 py-2 font-medium">时间</th>
                       <th className="text-left px-3 py-2 font-medium">环节</th>
+                      <th className="text-left px-3 py-2 font-medium">运行</th>
                       <th className="text-left px-3 py-2 font-medium">模型</th>
                       <th className="text-left px-3 py-2 font-medium">候选人</th>
                       <th className="text-right px-3 py-2 font-medium">Token</th>
@@ -251,6 +275,21 @@ const LlmCost: React.FC = () => {
                           {c.created_at?.slice(5, 19).replace('T', ' ')}
                         </td>
                         <td className="px-3 py-1.5 font-mono text-slate-700">{c.call_site}</td>
+                        <td className="px-3 py-1.5">
+                          {/* 点一下只看该次运行的全部调用：一次简历评估会发 4~8 次调用，
+                              只按候选人分组时重跑会混在一起 */}
+                          {c.thread_id ? (
+                            <button
+                              onClick={() => setThreadFilter(c.thread_id)}
+                              title={`只看运行 ${c.thread_id} 的全部调用`}
+                              className="font-mono text-blue-600 hover:underline"
+                            >
+                              {c.thread_id.slice(0, 8)}
+                            </button>
+                          ) : (
+                            <span className="text-slate-300" title="非工作流链路（知识库问答 / JD 解析）">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-1.5 text-slate-500 font-mono">
                           {/* 显示供应商实际服务的版本：同一请求名可能被路由到不同底层版本，
                               分数对不上时要能看出是不是换了版本 */}

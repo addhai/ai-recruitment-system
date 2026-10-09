@@ -301,6 +301,10 @@ class LLMCallLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     call_site = Column(String(64), index=True)     # parse_resume / evaluate_skill_match / knowledge_qa …
     candidate_id = Column(Integer, index=True)     # 非候选人链路可空
+    # 所属工作流运行的 thread_id（见 WorkflowRun.results）。
+    # 一次简历上传会触发 4~8 次 LLM 调用，只有 candidate_id 时同一候选人重跑就分不开；
+    # 有了它才能把"一次运行"的调用串成一条链来排查。
+    thread_id = Column(String(64), index=True)
     model = Column(String(64))                    # 请求的模型名（配置里填的）
     # 供应商实际提供服务的模型版本。DeepSeek 会按模型名路由到具体版本
     # （如 deepseek-flash -> DeepSeek-V4.1-Flash），只记请求名会让
@@ -377,14 +381,20 @@ def migrate_database() -> None:
     - **全新库**：没有表，从 baseline 起逐版本 upgrade，schema 完全来自迁移脚本
       （不再用 create_all，否则基线之外的迁移里若有数据回填，全新库会被漏掉）。
     - **alembic 之前建的旧库**（有业务表但没有 alembic_version）：
-      先用 _ensure_columns() 把历史上靠它补的列变更补齐，再 stamp head 一次性纳管。
-      此后该库的演进全部走迁移脚本。
+      先用 _ensure_columns() 把历史上靠它补的列变更补齐，再 stamp 到 **baseline**
+      （旧库的结构对应的就是 baseline），随后 upgrade 会把 baseline 之后的迁移全部施加。
 
-    注意：stamp head 断言"旧库当前结构等于最新版本"。本项目历史上的结构变更
+    **必须 stamp 到 baseline，不能 stamp head**：stamp head 会把旧库直接标记为最新，
+    从而**跳过 baseline 之后的每一个迁移**——库被标成"已迁移"、实际缺列，
+    而且此后再跑 upgrade 也修不回来（它认为自己已在 head）。这个坑在只有 baseline
+    时看不出来，加了第二个迁移才会暴露。
+
+    注意：stamp baseline 断言"旧库当前结构等于 baseline"。本项目历史上的结构变更
     只有新增列与列重命名两类，_ensure_columns() 恰好覆盖这两种，因此该断言成立。
     今后若出现改类型/回填等变更，必须写成正式迁移，不能再依赖 _ensure_columns()。
     """
     from alembic import command
+    from alembic.script import ScriptDirectory
     from sqlalchemy import inspect as sa_inspect
 
     tables = set(sa_inspect(engine).get_table_names())
@@ -394,8 +404,17 @@ def migrate_database() -> None:
     cfg = _alembic_config()
     if app_tables and not has_version:
         _ensure_columns()
-        command.stamp(cfg, "head")
-        print("[db] 已有库首次纳入 alembic 管理，已标记为最新版本")
+        # 从迁移脚本里取基线版本号，而不是硬编码——基线文件本身约定不可修改
+        script = ScriptDirectory.from_config(cfg)
+        bases = script.get_bases()
+        if len(bases) != 1:
+            raise RuntimeError(
+                f"迁移历史存在 {len(bases)} 个基线，无法自动纳管已有库，"
+                "请人工确认应先 stamp 到哪一个版本"
+            )
+        command.stamp(cfg, bases[0])
+        print(f"[db] 已有库首次纳入 alembic 管理，"
+              f"已标记到基线 {bases[0]}，随后施加其后的迁移")
     command.upgrade(cfg, "head")
 
 

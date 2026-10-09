@@ -232,6 +232,25 @@ GitHub Actions（`.github/workflows/ci.yml`）在每次 `push` / `pull_request` 
 **降级与预算必须区分**：`degraded=true` 表示调用失败走了规则兜底分（此时评分不可信），
 `budget_blocked` 表示预算耗尽根本没发起调用。两者在成本页与日志里分列显示。
 
+### 调用链归集（thread_id）
+
+一次简历上传会触发 4~8 次 LLM 调用。`llm_call_logs.thread_id` 记录这些调用属于哪一次
+工作流运行，于是"这次运行到底哪一步花了钱、哪一步降级了"可以直接下钻，
+而不是靠时间戳猜。
+
+实现见 `src/services/trace.py`：一个 ContextVar + `trace_thread()`，
+由 `runner._drive()` 在驱动图时设置，埋点写库时读取。用 ContextVar 而不是给函数
+加参数，是因为埋点入口的调用点散布在 10 个图节点里，逐个加参数既侵入又容易漏；
+且 ContextVar 按任务隔离，多候选人并发不会串号。
+
+非工作流链路（知识库问答、JD 解析）本来就没有 thread_id，该列**留空**，不塞假值。
+
+成本页明细里点「运行」即可只看该次运行的全部调用（服务端过滤，不是只筛本地几十条）：
+
+```
+GET /llm-stats/calls?thread_id=wf-xxxxxxxx
+```
+
 ### 成本预算
 
 模型与单价**优先在界面配置**（系统设置 → 模型配置，仅管理员），下列 `.env` 项作为兜底默认值：

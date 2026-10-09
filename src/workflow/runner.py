@@ -34,6 +34,7 @@ from src.config import settings
 from src.models.database import SessionLocal, Candidate, WorkflowRun
 from src.workflow import db_actions
 from src.services import budget
+from src.services import trace
 from src.workflow.recruitment_graph import build_recruitment_graph, compute_overall
 from src.sse.notification import notify_workflow_progress
 from src.safety import OutputGuard
@@ -293,7 +294,20 @@ def _sanitize(obj):
 async def _drive(graph, config, workflow_run_id: int, candidate_id: int,
                  candidate_name: str, start_input: Optional[dict] = None,
                  resume_value: Any = None) -> Dict[str, Any]:
-    """驱动图运行到下一个 interrupt 或终局，途中推送 SSE 并持久化进度"""
+    """驱动图运行到下一个 interrupt 或终局，途中推送 SSE 并持久化进度。
+
+    这层只做一件事：把驱动期间发起的 LLM 调用归到本次运行的 thread_id
+    （见 src/services/trace.py）。thread_id 从 config 里取，免得再多透传一个参数。
+    """
+    thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+    with trace.trace_thread(thread_id):
+        return await _drive_stream(graph, config, workflow_run_id, candidate_id,
+                                  candidate_name, start_input, resume_value)
+
+
+async def _drive_stream(graph, config, workflow_run_id: int, candidate_id: int,
+                        candidate_name: str, start_input: Optional[dict] = None,
+                        resume_value: Any = None) -> Dict[str, Any]:
     final_values: Dict[str, Any] = {}
     try:
         if resume_value is not None:

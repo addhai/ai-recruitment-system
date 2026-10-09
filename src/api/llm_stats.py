@@ -176,6 +176,8 @@ def get_summary(
 def list_recent_calls(
     limit: int = Query(50, ge=1, le=200),
     call_site: Optional[str] = None,
+    thread_id: Optional[str] = Query(
+        None, description="按工作流运行过滤：查一次简历评估到底发了哪些调用"),
     db: Session = Depends(get_db),
     current_user=Depends(require_hr_admin),
 ):
@@ -183,12 +185,18 @@ def list_recent_calls(
     query = db.query(LLMCallLog)
     if call_site:
         query = query.filter(LLMCallLog.call_site == call_site)
-    rows = query.order_by(LLMCallLog.id.desc()).limit(limit).all()
+    if thread_id:
+        # 一次运行有 4~8 次调用，按时间正序看更像执行顺序
+        query = query.filter(LLMCallLog.thread_id == thread_id)
+        rows = query.order_by(LLMCallLog.id.asc()).limit(limit).all()
+    else:
+        rows = query.order_by(LLMCallLog.id.desc()).limit(limit).all()
     return [{
         "id": r.id,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "call_site": r.call_site,
         "candidate_id": r.candidate_id,
+        "thread_id": r.thread_id,
         "model": r.model,
         "model_served": r.model_served,
         "input_tokens": r.input_tokens,

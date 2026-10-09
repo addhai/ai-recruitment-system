@@ -84,6 +84,7 @@ def _write_log(*, call_site: str, model: str, base_url: str,
     """写 LLMCallLog。任何写库失败都不能影响主流程。"""
     try:
         from src.models.database import SessionLocal, LLMCallLog, ensure_tables
+        from src.services import trace
         # 确保表存在：脚本/CLI 等不经应用启动的入口，先前会因缺表而静默丢埋点
         ensure_tables()
 
@@ -93,6 +94,8 @@ def _write_log(*, call_site: str, model: str, base_url: str,
                 created_at=datetime.utcnow(),
                 call_site=call_site,
                 candidate_id=candidate_id,
+                # 有工作流上下文时归到该运行；无上下文的链路留空，不硬塞假值
+                thread_id=trace.current_thread_id(),
                 model=model,
                 model_served=model_served or model,
                 base_url=base_url,

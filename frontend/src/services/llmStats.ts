@@ -62,6 +62,8 @@ export interface LlmCallRow {
   created_at: string | null;
   call_site: string;
   candidate_id: number | null;
+  /** 所属工作流运行；非工作流链路（知识库问答/JD 解析）为 null */
+  thread_id: string | null;
   model: string | null;
   /** 供应商实际服务的模型版本（可能不同于请求名） */
   model_served: string | null;
@@ -81,8 +83,12 @@ export const getLlmStats = async (days = 7): Promise<LlmStats> => {
   return apiRequest<LlmStats>('/llm-stats/summary', { params: { days } });
 };
 
-export const getRecentLlmCalls = async (limit = 50, callSite?: string): Promise<LlmCallRow[]> => {
+export const getRecentLlmCalls = async (
+  limit = 50,
+  callSite?: string,
+  threadId?: string,
+): Promise<LlmCallRow[]> => {
   return apiRequest<LlmCallRow[]>('/llm-stats/calls', {
-    params: { limit, call_site: callSite },
+    params: { limit, call_site: callSite, thread_id: threadId },
   });
 };

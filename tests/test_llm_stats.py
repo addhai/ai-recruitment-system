@@ -149,6 +149,52 @@ class TestCurrencyScopedCost:
         assert row["excluded_cost"] == pytest.approx(5.0)
 
 
+class TestRecentCallsByThread:
+    """按工作流运行过滤：一次简历评估会发 4~8 次调用，要能把它们串起来看。
+
+    只有 candidate_id 时同一候选人重跑就混在一起，所以必须有 thread_id 维度。
+    """
+
+    def _seed_traced(self, thread_id, sites):
+        with SessionLocal() as db:
+            for site in sites:
+                db.add(LLMCallLog(call_site=site, model="m", cost=0.001,
+                                  currency=_CURRENT, thread_id=thread_id,
+                                  latency_ms=10, status="ok",
+                                  degraded=False, usage_missing=False))
+            db.commit()
+
+    def test_thread_id_returned_in_rows(self, client, auth_headers):
+        self._seed_traced("wf-aaa", ["parse_resume"])
+        rows = client.get("/llm-stats/calls", headers=auth_headers).json()
+        assert any(r["thread_id"] == "wf-aaa" for r in rows)
+        assert "thread_id" in rows[0], "明细必须带上运行标识才能下钻"
+
+    def test_filter_returns_only_that_run(self, client, auth_headers):
+        self._seed_traced("wf-aaa", ["parse_resume", "extract_skills"])
+        self._seed_traced("wf-bbb", ["evaluate_education"])
+
+        rows = client.get("/llm-stats/calls", params={"thread_id": "wf-aaa"},
+                          headers=auth_headers).json()
+        assert len(rows) == 2
+        assert {r["thread_id"] for r in rows} == {"wf-aaa"}
+        assert {r["call_site"] for r in rows} == {"parse_resume", "extract_skills"}
+
+    def test_filter_orders_chronologically(self, client, auth_headers):
+        """按运行查时用时间正序——这样看起来就是实际执行顺序"""
+        self._seed_traced("wf-order", ["a_first", "b_second", "c_third"])
+        rows = client.get("/llm-stats/calls", params={"thread_id": "wf-order"},
+                          headers=auth_headers).json()
+        assert [r["call_site"] for r in rows] == ["a_first", "b_second", "c_third"]
+
+    def test_untraced_rows_have_null_thread(self, client, auth_headers):
+        """知识库问答 / JD 解析没有工作流上下文，该列应为空而不是假值"""
+        _seed("knowledge_qa", n=1, suffix=False)
+        rows = client.get("/llm-stats/calls", headers=auth_headers).json()
+        row = next(r for r in rows if r["call_site"] == "knowledge_qa")
+        assert row["thread_id"] is None
+
+
 class TestRecentCalls:
     def test_returns_metadata_not_content(self, client, auth_headers):
         site = _seed("parse_resume", n=1, suffix=False)
@@ -162,10 +208,10 @@ class TestRecentCalls:
         r = rows[0]
         # 只应有元数据，绝不能回传 prompt 全文或模型输出
         assert set(r.keys()) <= {
-            "id", "created_at", "call_site", "candidate_id", "model",
-            "model_served", "input_tokens", "output_tokens", "cost", "currency",
-            "latency_ms", "status", "degraded", "usage_missing", "prompt_hash",
-            "error",
+            "id", "created_at", "call_site", "candidate_id", "thread_id",
+            "model", "model_served", "input_tokens", "output_tokens", "cost",
+            "currency", "latency_ms", "status", "degraded", "usage_missing",
+            "prompt_hash", "error",
         }
         assert "model_served" in r, "实际服务的模型版本属于元数据，应回传"
         assert len(r["prompt_hash"]) == 12, "prompt 只存哈希前 12 位"
