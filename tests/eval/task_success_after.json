@@ -1,0 +1,4740 @@
+{
+  "meta": {
+    "n_per_mode": 20,
+    "seed": 20261111,
+    "eval_sites": [
+      "parse_resume",
+      "extract_skills",
+      "evaluate_skill_match",
+      "evaluate_experience",
+      "evaluate_education",
+      "assess_cultural_fit"
+    ],
+    "modes": [
+      "timeout",
+      "upstream_5xx",
+      "bad_json",
+      "bad_schema",
+      "db_error",
+      "budget_exhausted"
+    ],
+    "metric_definitions": {
+      "survival_rate": "终态 ∈ {waiting_human, completed, budget_halted, partial} 的比例；任务没被异常打断",
+      "clean_rate": "全程无任何维度使用兜底分的比例（结论完全来自模型）",
+      "useful_rate": "存活且库里确实落下了维度评分的比例（结论可用）",
+      "partial_credit_rate": "任务失败但库里仍留有已评估维度的比例（沉没成本）"
+    }
+  },
+  "overall": {
+    "n": 120,
+    "survived": 120,
+    "survival_rate": 1.0,
+    "clean_conclusion": 40,
+    "clean_rate": 0.3333,
+    "useful": 104,
+    "useful_rate": 0.8667,
+    "partial_credit": 0,
+    "partial_credit_rate": 0.0,
+    "failed": 0,
+    "injection_missed": 0,
+    "degraded_reported": 0,
+    "run_status_counts": {
+      "waiting_human": 80,
+      "partial": 20,
+      "budget_halted": 20
+    }
+  },
+  "by_mode": {
+    "control": {
+      "n": 1,
+      "survived": 1,
+      "survival_rate": 1.0,
+      "clean_conclusion": 1,
+      "clean_rate": 1.0,
+      "useful": 1,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 1
+      }
+    },
+    "timeout": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 0,
+      "clean_rate": 0.0,
+      "useful": 20,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 20
+      }
+    },
+    "upstream_5xx": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 0,
+      "clean_rate": 0.0,
+      "useful": 20,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 20
+      }
+    },
+    "bad_json": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 0,
+      "clean_rate": 0.0,
+      "useful": 20,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 20
+      }
+    },
+    "bad_schema": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 0,
+      "clean_rate": 0.0,
+      "useful": 20,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 20
+      }
+    },
+    "db_error": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 20,
+      "clean_rate": 1.0,
+      "useful": 15,
+      "useful_rate": 0.75,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "partial": 20
+      }
+    },
+    "budget_exhausted": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 20,
+      "clean_rate": 1.0,
+      "useful": 9,
+      "useful_rate": 0.45,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "budget_halted": 20
+      }
+    }
+  },
+  "by_site": {
+    "parse_resume": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 4,
+      "clean_rate": 0.2,
+      "useful": 16,
+      "useful_rate": 0.8,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 16,
+        "budget_halted": 4
+      }
+    },
+    "extract_skills": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 4,
+      "clean_rate": 0.2,
+      "useful": 16,
+      "useful_rate": 0.8,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 16,
+        "budget_halted": 4
+      }
+    },
+    "evaluate_skill_match": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 8,
+      "clean_rate": 0.4,
+      "useful": 12,
+      "useful_rate": 0.6,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 12,
+        "partial": 5,
+        "budget_halted": 3
+      }
+    },
+    "evaluate_experience": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 8,
+      "clean_rate": 0.4,
+      "useful": 20,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 12,
+        "partial": 5,
+        "budget_halted": 3
+      }
+    },
+    "evaluate_education": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 8,
+      "clean_rate": 0.4,
+      "useful": 20,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 12,
+        "partial": 5,
+        "budget_halted": 3
+      }
+    },
+    "assess_cultural_fit": {
+      "n": 20,
+      "survived": 20,
+      "survival_rate": 1.0,
+      "clean_conclusion": 8,
+      "clean_rate": 0.4,
+      "useful": 20,
+      "useful_rate": 1.0,
+      "partial_credit": 0,
+      "partial_credit_rate": 0.0,
+      "failed": 0,
+      "injection_missed": 0,
+      "degraded_reported": 0,
+      "run_status_counts": {
+        "waiting_human": 12,
+        "partial": 5,
+        "budget_halted": 3
+      }
+    }
+  },
+  "records": [
+    {
+      "mode": "control",
+      "target_site": null,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": null,
+      "injected_mode": null,
+      "reached_eval_end": true
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 0
+    },
+    {
+      "mode": "timeout",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 1
+    },
+    {
+      "mode": "timeout",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 2
+    },
+    {
+      "mode": "timeout",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 3
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 4
+    },
+    {
+      "mode": "timeout",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 5
+    },
+    {
+      "mode": "timeout",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 6
+    },
+    {
+      "mode": "timeout",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 7
+    },
+    {
+      "mode": "timeout",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 8
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 9
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 10
+    },
+    {
+      "mode": "timeout",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 11
+    },
+    {
+      "mode": "timeout",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 12
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 13
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 14
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 15
+    },
+    {
+      "mode": "timeout",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 16
+    },
+    {
+      "mode": "timeout",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 17
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 18
+    },
+    {
+      "mode": "timeout",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "timeout",
+      "reached_eval_end": true,
+      "sample": 19
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 0
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 1
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 2
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 3
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 4
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 5
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 6
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 7
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 8
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 9
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 10
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 11
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 12
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 13
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 14
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 15
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 16
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 17
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 18
+    },
+    {
+      "mode": "upstream_5xx",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "upstream_5xx",
+      "reached_eval_end": true,
+      "sample": 19
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 0
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 1
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 2
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 3
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 4
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 5
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 6
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 7
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 8
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 9
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 10
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 11
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 12
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 13
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 14
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 15
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 16
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 17
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 18
+    },
+    {
+      "mode": "bad_json",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "bad_json",
+      "reached_eval_end": true,
+      "sample": 19
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 0
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 1
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 2
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 3
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 4
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 5
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 6
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 7
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 8
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 9
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 10
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 11
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 12
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "parse_resume",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "parse_resume"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 13
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_skill_match",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_skill_match"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 14
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 15
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_experience",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_experience"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 16
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "assess_cultural_fit",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "assess_cultural_fit"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 17
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "evaluate_education",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "evaluate_education"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 18
+    },
+    {
+      "mode": "bad_schema",
+      "target_site": "extract_skills",
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "candidate_status": "questionnaire",
+      "error": null,
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [
+        "extract_skills"
+      ],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 7,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit",
+        "questionnaire_stage"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "bad_schema",
+      "reached_eval_end": true,
+      "sample": 19
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_experience",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_skill_match",
+      "cost_spent": 0.0,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 0
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_skill_match",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": true,
+      "failed_step": "extract_skills",
+      "cost_spent": 0.0,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 1
+    },
+    {
+      "mode": "db_error",
+      "target_site": "assess_cultural_fit",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_education",
+      "cost_spent": 0.0,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 2
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_education",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_experience",
+      "cost_spent": 0.0,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 3
+    },
+    {
+      "mode": "db_error",
+      "target_site": "assess_cultural_fit",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_education",
+      "cost_spent": 0.0,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 4
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_skill_match",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": true,
+      "failed_step": "extract_skills",
+      "cost_spent": 0.0,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 5
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_skill_match",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": true,
+      "failed_step": "extract_skills",
+      "cost_spent": 0.0,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 6
+    },
+    {
+      "mode": "db_error",
+      "target_site": "assess_cultural_fit",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_education",
+      "cost_spent": 0.0,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 7
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_education",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_experience",
+      "cost_spent": 0.0,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 8
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_experience",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_skill_match",
+      "cost_spent": 0.0,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 9
+    },
+    {
+      "mode": "db_error",
+      "target_site": "assess_cultural_fit",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_education",
+      "cost_spent": 0.0,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 10
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_experience",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_skill_match",
+      "cost_spent": 0.0,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 11
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_experience",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_skill_match",
+      "cost_spent": 0.0,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 12
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_education",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_experience",
+      "cost_spent": 0.0,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 13
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_education",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_experience",
+      "cost_spent": 0.0,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 14
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_education",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_experience",
+      "cost_spent": 0.0,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 15
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_skill_match",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": true,
+      "failed_step": "extract_skills",
+      "cost_spent": 0.0,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 16
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_skill_match",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": true,
+      "failed_step": "extract_skills",
+      "cost_spent": 0.0,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 17
+    },
+    {
+      "mode": "db_error",
+      "target_site": "evaluate_experience",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_skill_match",
+      "cost_spent": 0.0,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 18
+    },
+    {
+      "mode": "db_error",
+      "target_site": "assess_cultural_fit",
+      "status": "partial",
+      "run_status": "partial",
+      "candidate_status": "pending_manual",
+      "error": "注入：写库失败",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": true,
+      "failed_step": "evaluate_education",
+      "cost_spent": 0.0,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "db_error",
+      "reached_eval_end": false,
+      "sample": 19
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_skill_match",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 0
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_education",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 1
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "assess_cultural_fit",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 2
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "extract_skills",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 2,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 3
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "assess_cultural_fit",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 4
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_skill_match",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 5
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_experience",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 6
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_skill_match",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 3,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match"
+      ],
+      "injected_at": "evaluate_skill_match",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 7
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "extract_skills",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 2,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 8
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "extract_skills",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 2,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 9
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "parse_resume",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 1,
+      "call_seq": [
+        "parse_resume"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 10
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_experience",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 11
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "assess_cultural_fit",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 3,
+      "assessed_dimensions": [
+        "education_score",
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 6,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education",
+        "assess_cultural_fit"
+      ],
+      "injected_at": "assess_cultural_fit",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 12
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_experience",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配"
+      ],
+      "evaluated_count": 1,
+      "assessed_dimensions": [
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 4,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience"
+      ],
+      "injected_at": "evaluate_experience",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 13
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "parse_resume",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 1,
+      "call_seq": [
+        "parse_resume"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 14
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "parse_resume",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 1,
+      "call_seq": [
+        "parse_resume"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 15
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "parse_resume",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 1,
+      "call_seq": [
+        "parse_resume"
+      ],
+      "injected_at": "parse_resume",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 16
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "extract_skills",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [],
+      "evaluated_count": 0,
+      "assessed_dimensions": [],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 2,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills"
+      ],
+      "injected_at": "extract_skills",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 17
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_education",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 18
+    },
+    {
+      "mode": "budget_exhausted",
+      "target_site": "evaluate_education",
+      "status": "budget_halted",
+      "run_status": "budget_halted",
+      "candidate_status": "pending_manual",
+      "error": "注入：预算耗尽",
+      "survived": true,
+      "injection_fired": true,
+      "degraded_sites": [],
+      "degraded_dims_reported": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "经验匹配"
+      ],
+      "evaluated_count": 2,
+      "assessed_dimensions": [
+        "experience_score",
+        "skill_match_score"
+      ],
+      "has_partial_fields": false,
+      "failed_step": null,
+      "cost_spent": null,
+      "calls": 5,
+      "call_seq": [
+        "parse_resume",
+        "extract_skills",
+        "evaluate_skill_match",
+        "evaluate_experience",
+        "evaluate_education"
+      ],
+      "injected_at": "evaluate_education",
+      "injected_mode": "budget_exhausted",
+      "reached_eval_end": false,
+      "sample": 19
+    }
+  ]
+}

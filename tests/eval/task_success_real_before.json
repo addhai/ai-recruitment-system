@@ -1,0 +1,343 @@
+{
+  "meta": {
+    "n": 15,
+    "mode": "real_llm",
+    "note": "隔离临时库，不受预算墙拦截；花费单独统计"
+  },
+  "overall": {
+    "n": 15,
+    "survived": 15,
+    "survival_rate": 1.0,
+    "useful": 15,
+    "useful_rate": 1.0,
+    "clean": 15,
+    "clean_rate": 1.0,
+    "run_status_counts": {
+      "completed": 1,
+      "waiting_human": 14
+    },
+    "latency_p50_ms": 40040,
+    "latency_p90_ms": 52845,
+    "latency_max_ms": 53474,
+    "total_cost": 0.8124,
+    "avg_cost": 0.05416,
+    "avg_calls": 6.93
+  },
+  "records": [
+    {
+      "index": 0,
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 52845,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-402c5612d7e344b4ae2c002cbe42581e",
+      "cost": 0.06439,
+      "calls": 6,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 1,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 42044,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-ebd2c2b4d9f7484a8535ce3b2559b03b",
+      "cost": 0.05311,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 2,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 33028,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-a08b3a7cbaaa475bbcba02617dd4548c",
+      "cost": 0.04296,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 3,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 37358,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-90d73b2dd4d14ab1b645f190d83ba66d",
+      "cost": 0.04963,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 4,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 34047,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-40e6892112c6415c9931d78ebd8158bf",
+      "cost": 0.046,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 5,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 39686,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-e5dafc0fd3124476af7b2d74daa3ef28",
+      "cost": 0.05059,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 6,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 47842,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-e411cca2e40c4de98c47f0af8534bbe4",
+      "cost": 0.06283,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 7,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 38254,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-cb36b3fdbfe44fae8628b62126986e1b",
+      "cost": 0.05266,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 8,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 39660,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-18e9077823b1492eb5f6cd49a480c9e7",
+      "cost": 0.0514,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 9,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 53474,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-84e4a561e0274d93bdf4f9bf40087b18",
+      "cost": 0.06807,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 10,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 38795,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-86dd69eaa6384a2180ea17daaf9e73f2",
+      "cost": 0.05058,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 11,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 45526,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-7d0fd2251de44cf28f24c4cc400f72e0",
+      "cost": 0.0438,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 12,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 51997,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-210f0a161e85484989820a112aa45a6d",
+      "cost": 0.06358,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 13,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 43853,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-6b48f25ca4c74ac4aabf02325e9f66f5",
+      "cost": 0.05889,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    },
+    {
+      "index": 14,
+      "status": "waiting_human",
+      "run_status": "waiting_human",
+      "error": null,
+      "elapsed_ms": 40040,
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "assessed_dimensions": [],
+      "thread_id": "wf-9d846cbd9be64251a5c3e7f58ba211fd",
+      "cost": 0.05391,
+      "calls": 7,
+      "call_errors": [],
+      "failed_step": null
+    }
+  ]
+}
