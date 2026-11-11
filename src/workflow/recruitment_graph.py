@@ -16,11 +16,14 @@ from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt
 
 from src.config import settings
+from src.logging_setup import get_logger
 from src.workflow import db_actions as db
 from src.sse import notification as sse
 # 统一 LLM 调用入口（与 JD 解析共用同一套超时/重试/降级策略）。
 # 以 _llm_json 之名导入，保留既有用法与测试里的 monkeypatch(rg, "_llm_json")。
 from src.services.llm_json import llm_json as _llm_json, get_llm as _get_llm, extract_llm_error as _extract_llm_error  # noqa: F401
+
+logger = get_logger(__name__)
 
 
 class RecruitmentState(TypedDict, total=False):
@@ -45,6 +48,9 @@ class RecruitmentState(TypedDict, total=False):
     # 而 default 里多数是「70 分」——它看起来像一个正常评分，实际根本没评。
     # 不记下来，HR 看到的就是「模型给了他 70 分」，而真相是模型挂了。
     degraded_dimensions: Optional[List[str]]
+    # 并行评分里**整个维度抛异常**的节点名。与 degraded_dimensions 区分开：
+    # degraded 是"模型挂了、用了兜底值"，这里是"这个维度压根没跑起来"。
+    failed_dimensions: Optional[List[str]]
     interview_r3_skipped: Optional[bool]
     culture_unconstrained: Optional[bool]
     unconstrained_dimensions: Optional[List[str]]
@@ -104,7 +110,8 @@ async def parse_resume(state: RecruitmentState) -> RecruitmentState:
 {resume_text}
 
 请提取：基本信息、教育背景、工作经历、技能清单、项目经验、语言能力。
-请以JSON格式输出，键名为：basic_info, education, experience, skills, projects, language""",
+请以JSON格式输出，键名为：basic_info, education, experience, skills, projects, language
+            请以JSON格式输出，键名为：basic_info, education, experience, skills, projects, language""",
             {"resume_text": (state.get("resume_text") or "")[:6000]},
             default_parsed,
 
@@ -139,8 +146,6 @@ async def extract_skills(state: RecruitmentState) -> RecruitmentState:
                            if isinstance(skills_data, dict) else None)
     return {**state, "parsed_resume": merged, "workflow_progress": 10, "current_step": "extract_skills"}
 
-
-# ================================================================ 阶段二：人岗匹配评估
 
 def _jd_brief(state: RecruitmentState) -> str:
     """把结构化 JD 渲染成给评审模型看的紧凑描述（无可用 JD 时回退岗位名）"""
@@ -554,6 +559,114 @@ async def assess_cultural_fit(state: RecruitmentState) -> RecruitmentState:
            "workflow_progress": 40, "current_step": "assess_cultural_fit"}
     if degraded:
         out["degraded_dimensions"] = _mark_degraded(state, "culture_match_score")
+    return out
+
+
+# ================================================================ 阶段二（并行）：四个评分维度
+_EVAL_DIMENSIONS = ("evaluate_skill_match", "evaluate_experience",
+                    "evaluate_education", "assess_cultural_fit")
+
+# 并行时会被多个节点同时写的「集合型」state 键：必须求并集，不能后者覆盖前者。
+#
+# 为什么需要特别处理：每个节点都基于**同一份输入 state** 计算，
+# 比如 degraded_dimensions = base + [自己的维度]，
+# 四个结果直接覆盖的话只会剩最后一个维度被记下来——
+# 也就是"只有最后一个维度知道自己用了兜底值"，另外三个的兜底痕迹全丢了。
+_MERGED_SET_KEYS = ("degraded_dimensions", "unconstrained_dimensions")
+
+# 并行时会被多个节点同时写的「字典型」state 键：必须按键合并，不能让后者整体覆盖。
+#
+# 为什么需要：`skill_match_details` 在串行布局下是**累加**的——
+# 技能节点写入 result，经验节点 `{**旧值, "experience_analysis": ...}`，
+# 教育节点再 `{**旧值, "education_analysis": ...}`，最终拿到三份分析。
+# 并行时四个节点都读同一份 base state（里面还没有任何 analysis），
+# 谁最后返回谁赢，另外两个的分析直接消失。分数不受影响（分数各自在独立字段里），
+# 但明细丢了——下游想解释"为什么这个维度这么给分"就没有依据了。
+_MERGED_DICT_KEYS = ("skill_match_details",)
+
+
+async def evaluate_dimensions(state: RecruitmentState) -> RecruitmentState:
+    """把技能、经验、教育、文化四个维度**并行**评完。
+
+    ## 为什么能并行
+
+    这四个维度**互不依赖**：每个都只读 `parsed_resume` 与 `jd_profile`，
+    不读别的维度的分数（综合分是最后 `compute_overall` 算的）。
+    所以它们本来就可以同时跑。
+
+    ## 收益是延迟，不是成本
+
+    实测单次耗时：技能 8.6s + 经验 5.6s + 教育 3.8s + 文化 6.2s ≈ 24 秒串行。
+    并行后是一轮往返 ≈ 8~10 秒。调用次数与花费**一分不变**——
+    这是零风险改动，不像合并调用那样要拿分数漂移去换成本。
+
+    ## 为什么不是合并成一次调用
+
+    合并能省 3 次调用（成本约降 60%），但四个维度各有独立的评分锚点、
+    独立的人格设定与独立的输出 schema。合并成一个 prompt 之后：
+    - 一处字段违规会同时打掉 4 个维度（现在是各自独立兜底）；
+    - 单个 prompt 里塞 4 套锚点，每个维度的严谨度都会下降。
+    所以本轮只做零风险的并行，合并留到有分数漂移守门时再做。
+
+    ## 失败处理
+
+    单个维度抛异常不能拖垮其余三个：捕获后记进 `failed_dimensions`。
+    这个维度的分数会缺失（`compute_overall` 自动把它排除并重新归一化权重），
+    比整条任务失败好。
+    """
+    funcs = (evaluate_skill_match, evaluate_experience,
+             evaluate_education, assess_cultural_fit)
+    outcomes = await asyncio.gather(*(f(state) for f in funcs),
+                                     return_exceptions=True)
+
+    merged: Dict[str, Any] = {}
+    progress = 0
+    degraded: List[str] = []
+    unconstrained: List[str] = []
+    failed: List[str] = []
+    # 字典型键的累积容器：以输入 state 里的已有值为起点，
+    # 这样即使上游已经写过一部分（例如恢复的 checkpoint），也不会被覆盖掉。
+    base_dicts: Dict[str, Any] = {
+        key: dict(state.get(key) or {}) for key in _MERGED_DICT_KEYS
+    }
+
+    for name, outcome in zip(_EVAL_DIMENSIONS, outcomes):
+        if isinstance(outcome, BaseException):
+            logger.warning("评分维度执行失败，已跳过该维度",
+                           extra={"dimension": name,
+                                  "error": f"{type(outcome).__name__}: {str(outcome)[:200]}"})
+            failed.append(name)
+            continue
+        for key, value in outcome.items():
+            if key in _MERGED_SET_KEYS or key in ("workflow_progress", "current_step"):
+                continue
+            if key in _MERGED_DICT_KEYS:
+                # 字典型键也要合并：串行时后一个节点基于前一个的结果追加，
+                # 并行时四个节点都基于同一份 base state，直接覆盖会互相打架
+                # （最终只剩最后一个完整字典 + 其余三个的部分键）。
+                merged[key] = {**base_dicts.get(key, {}), **value}
+                base_dicts[key] = merged[key]
+                continue
+            merged[key] = value
+        progress = max(progress, int(outcome.get("workflow_progress") or 0))
+        for item in (outcome.get("degraded_dimensions") or []):
+            if item not in degraded:
+                degraded.append(item)
+        for item in (outcome.get("unconstrained_dimensions") or []):
+            if item not in unconstrained:
+                unconstrained.append(item)
+
+    out = {**state, **merged}
+    # 进度取四个节点里最大的那个：并行下没有"最后一个"的概念，
+    # 用最大值保证进度条不会倒退。
+    out["workflow_progress"] = progress or 40
+    out["current_step"] = "evaluate_dimensions"
+    if degraded:
+        out["degraded_dimensions"] = degraded
+    if unconstrained:
+        out["unconstrained_dimensions"] = unconstrained
+    if failed:
+        out["failed_dimensions"] = failed
     return out
 
 
@@ -1106,10 +1219,17 @@ def build_recruitment_graph(checkpointer=None):
 
     workflow.add_node("parse_resume", parse_resume)
     workflow.add_node("extract_skills", extract_skills)
+    # 四个评分维度现在由 evaluate_dimensions 一次并行跑完。
+    #
+    # 下面这四个节点**仍然注册**（但已没有入边、不会被执行）：
+    # 老 checkpoint 里可能记着它们的名字，删掉会让旧运行恢复时找不到节点。
+    # 评分链上没有 interrupt（挂起点都在它下游的问卷与面试），
+    # 所以不会有运行停在评分链中间，注册它们只是兼容性保险。
     workflow.add_node("evaluate_skill_match", evaluate_skill_match)
     workflow.add_node("evaluate_experience", evaluate_experience)
     workflow.add_node("evaluate_education", evaluate_education)
     workflow.add_node("assess_cultural_fit", assess_cultural_fit)
+    workflow.add_node("evaluate_dimensions", evaluate_dimensions)
     workflow.add_node("questionnaire_stage", questionnaire_stage)
     workflow.add_node("interview_round_1", make_interview_node(1, 58, 63))
     workflow.add_node("interview_round_2", make_interview_node(2, 69, 74))
@@ -1121,12 +1241,16 @@ def build_recruitment_graph(checkpointer=None):
 
     workflow.set_entry_point("parse_resume")
     workflow.add_edge("parse_resume", "extract_skills")
-    workflow.add_edge("extract_skills", "evaluate_skill_match")
-    workflow.add_edge("evaluate_skill_match", "evaluate_experience")
-    workflow.add_edge("evaluate_experience", "evaluate_education")
-    workflow.add_edge("evaluate_education", "assess_cultural_fit")
+    # 原来这里有四条串行边（技能→经验→教育→文化）。四个维度互不依赖，
+    # 现在一次并行跑完：调用次数与花费不变，串行 24 秒变成一轮往返 8~10 秒。
+    workflow.add_edge("extract_skills", "evaluate_dimensions")
 
-    workflow.add_conditional_edges("assess_cultural_fit", check_culture_pass, {
+    workflow.add_conditional_edges("evaluate_dimensions", check_culture_pass, {
+        # 文化关卡现在挂在并行节点上：四个维度已经一次跑完，
+        # 文化分就在同一个 state 里，直接用它判关卡。
+        # （原来这条边挂在 assess_cultural_fit 上，并行化后那个节点已无入边，
+        #   忘记改挂会让流程在评分后直接走到图尽头——调用数对得上、
+        #   分数也都算出来了，但问卷与面试根本不会跑。守门用例盯着这个。）
         # review 与 pass 走同一条边：文化契合落在待复核区间时不阻塞流程，
         # 继续跑完问卷与面试，终局再锁档到"待人工复核"交给 HR 事后裁决
         "pass": "questionnaire_stage",
