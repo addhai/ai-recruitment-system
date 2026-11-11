@@ -41,7 +41,7 @@ def listen_sse(token):
         pass
 
 
-# 针对该简历（智能客服 Agent 平台 / 智能招聘中台）按题���关键词准备差异化答案
+# 针对该简历（智能客服 Agent 平台 / 智能招聘中台）按题目关键词准备差异化答案
 ANSWERS = {
     "agent": (
         "我用 LangGraph 把客服场景拆成 4 个智能体 A2A 协作：Orchestrator 负责意图识别与路由，"
