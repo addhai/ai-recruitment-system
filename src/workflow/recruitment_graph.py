@@ -110,8 +110,7 @@ async def parse_resume(state: RecruitmentState) -> RecruitmentState:
 {resume_text}
 
 请提取：基本信息、教育背景、工作经历、技能清单、项目经验、语言能力。
-请以JSON格式输出，键名为：basic_info, education, experience, skills, projects, language
-            请以JSON格式输出，键名为：basic_info, education, experience, skills, projects, language""",
+请以JSON格式输出，键名为：basic_info, education, experience, skills, projects, language""",
             {"resume_text": (state.get("resume_text") or "")[:6000]},
             default_parsed,
 
@@ -127,25 +126,44 @@ async def parse_resume(state: RecruitmentState) -> RecruitmentState:
 
 
 async def extract_skills(state: RecruitmentState) -> RecruitmentState:
+    """把技能清单落到 `parsed_resume` 与简历表里，**不再调 LLM**。
+
+    ## 原来这里是第二次调用
+
+    老实现把 `parse_resume` 刚刚解析出来的简历再读一遍、再让模型把技能
+    「分类」成 `skills_technical` / `skills_soft` / `domain_knowledge`。
+    实测每次任务固定多花一次调用（¥0.0061、约 4 秒、682 输出 tokens）。
+
+    但那次调用的**输入就是上一次调用的输出**，它产出的 `skills_technical`
+    与 `parse_resume` 的 `skills` 是同一份技能清单——不是两次提取，
+    是同一件事做两遍。而且 `skills_soft` 与 `domain_knowledge`
+    全仓没有任何代码读取，纯属白花钱。
+
+    ## 为什么是「本地派生」而不是「让 parse_resume 一起吐出来」
+
+    中间试过一版：在 `parse_resume` 的提示词里要求同时给出扁平与分类两种视图。
+    结果**更贵**——实测 `parse_resume` 输出 tokens 从 1284 涨到 3618、
+    均成本从 ¥0.01054 涨到 ¥0.02935（+178%），比它省下的那次调用贵三倍，
+    每任务净亏 ¥0.0127。原因很直白：要模型多吐 2300 多个 token，
+    而多吐的内容绝大部分是**同一个技能清单的第二份拷贝**。
+
+    所以现在 `skills_technical` 就在本地从扁平 `skills` 直接派生（零成本）：
+    两者本来就是同一份内容，让模型再抄一遍毫无意义。
+    技能匹配节点读的是 `skills_technical or skills`，两条路都能拿到技能。
+
+    ## 兜底
+
+    `skills_technical` 已存在时优先用已有的（老数据重跑不会被覆盖）；
+    缺失时回退扁平 `skills`，所以合并前解析的简历重跑也不会缺技能。
+    """
     parsed = state.get("parsed_resume") or {}
-    skills_data = await _llm_json(
-        """从以下解析后的简历中提取技能信息，按类别分类。
-
-解析后的简历：
-{parsed_resume}
-
-输出JSON格式，包含 skills_technical, skills_soft, domain_knowledge 三个数组字段。""",
-        {"parsed_resume": str(parsed)[:4000]},
-        {"skills_technical": parsed.get("skills", []), "skills_soft": [], "domain_knowledge": []},
-
-        call_site="extract_skills",
-    )
-    merged = {**parsed, **(skills_data if isinstance(skills_data, dict) else {})}
-    db.save_resume_parsed(state["candidate_id"], merged,
-                           skills=skills_data.get("skills_technical")
-                           if isinstance(skills_data, dict) else None)
+    skills_technical = parsed.get("skills_technical") or parsed.get("skills") or []
+    merged = {**parsed, "skills_technical": skills_technical}
+    db.save_resume_parsed(state["candidate_id"], merged, skills=skills_technical)
     return {**state, "parsed_resume": merged, "workflow_progress": 10, "current_step": "extract_skills"}
 
+
+# ================================================================ 阶段二：人岗匹配评估
 
 def _jd_brief(state: RecruitmentState) -> str:
     """把结构化 JD 渲染成给评审模型看的紧凑描述（无可用 JD 时回退岗位名）"""

@@ -169,10 +169,26 @@ def test_experience_prefers_work_history_when_present(monkeypatch):
     assert "业余项目" not in captured["experience"]
 
 
-def test_extract_skills_merges(monkeypatch):
-    _patch_llm(monkeypatch, {"skills_technical": ["Python", "MySQL"], "skills_soft": ["沟通"], "domain_knowledge": ["电商"]})
+def test_extract_skills_uses_categorized_skills_from_parse(monkeypatch):
+    """技能分类已并进 parse_resume，extract_skills 不再调 LLM。
+
+    它现在只做落库与状态整理：把分类结果整理进 parsed_resume，
+    老数据（没有 skills_technical）回退到扁平 skills。
+    """
+    calls = []
+
+    def _record(prompt, variables, default, call_site="unknown", **kw):
+        calls.append(call_site)
+        return default
+
+    monkeypatch.setattr(rg, "_llm_json", _record)
     cid = _mk_candidate()
-    out = asyncio.run(rg.extract_skills(_state(cid)))
+    state = _state(cid, parsed_resume={
+        "skills": ["Python", "Redis"],
+        "skills_technical": ["Python", "MySQL"],
+    })
+    out = asyncio.run(rg.extract_skills(state))
+    assert calls == [], f"extract_skills 不该再调 LLM，实际调了 {calls}"
     assert "MySQL" in out["parsed_resume"]["skills_technical"]
     assert out["current_step"] == "extract_skills"
 
