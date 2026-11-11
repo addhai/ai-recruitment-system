@@ -1,0 +1,1260 @@
+{
+  "S0": {
+    "label": "原始实现（jieba 分词 + BM25 填满 + 向量被截断）",
+    "metrics": {
+      "mrr": 0.8906,
+      "recall_at_k": 0.8889,
+      "top1": 0.7222,
+      "passed": 17,
+      "cases": 18,
+      "ranked_cases": 16,
+      "latency_ms_median": 76.2,
+      "latency_ms_p90": 80.7,
+      "latency_ms_mean": 77.1
+    },
+    "cases": [
+      {
+        "name": "01-年假天数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "02-年假上限与递增",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "员工培训制度",
+          "绩效考核制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "03-病假婚假产假",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "员工入职流程",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "04-试用期工资与转正",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "绩效考核制度",
+          "员工福利制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "05-试用期时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "06-绩效等级对应分数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "07-绩效维度权重",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "08-面试轮次与时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "绩效考核制度",
+          "员工福利制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "09-招聘周期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "绩效考核制度",
+          "员工入职流程",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "10-培训费用与服务期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "11-薪资保密",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 2,
+        "hit_titles": [
+          "员工入职流程",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "12-发薪日期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "13-负例-股票期权",
+        "requires_vector": false,
+        "passed": true,
+        "rank": null,
+        "hit_titles": [
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "14-向量-语义改写-休假时长",
+        "requires_vector": true,
+        "passed": false,
+        "rank": null,
+        "hit_titles": [
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度",
+          "绩效考核制度"
+        ],
+        "failures": [
+          "未命中期望文档: ['员工福利制度']（实际 Top-4: ['薪酬管理制度', '招聘流程规范', '员工培训制度', '绩效考核制度']）",
+          "未命中期望文档: ['员工福利制度']（实际 Top-4: ['薪酬管理制度', '招聘流程规范', '员工培训制度', '绩效考核制度']）",
+          "未命中期望文档: ['员工福利制度']（实际 Top-4: ['薪酬管理制度', '招聘流程规范', '员工培训制度', '绩效考核制度']）"
+        ]
+      },
+      {
+        "name": "15-向量-语义改写-调薪条件",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 2,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "16-向量-语义改写-收入保密",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 4,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "招聘流程规范",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "17-向量-语义改写-绩效档位",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "员工培训制度",
+          "员工入职流程",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "18-向量-语义改写-新人培训",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "招聘流程规范",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      }
+    ]
+  },
+  "S1": {
+    "label": "+ 字符 bigram 混合分词（向量路仍死）",
+    "metrics": {
+      "mrr": 0.8438,
+      "recall_at_k": 0.8889,
+      "top1": 0.6667,
+      "passed": 17,
+      "cases": 18,
+      "ranked_cases": 16,
+      "latency_ms_median": 78.6,
+      "latency_ms_p90": 129.6,
+      "latency_ms_mean": 93.3
+    },
+    "cases": [
+      {
+        "name": "01-年假天数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "02-年假上限与递增",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "员工培训制度",
+          "绩效考核制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "03-病假婚假产假",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "员工入职流程",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "04-试用期工资与转正",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "员工福利制度",
+          "薪酬管理制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "05-试用期时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "06-绩效等级对应分数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "07-绩效维度权重",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "08-面试轮次与时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "员工福利制度",
+          "绩效考核制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "09-招聘周期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "绩效考核制度",
+          "员工入职流程",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "10-培训费用与服务期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "11-薪资保密",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 2,
+        "hit_titles": [
+          "员工入职流程",
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "12-发薪日期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 2,
+        "hit_titles": [
+          "员工入职流程",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "13-负例-股票期权",
+        "requires_vector": false,
+        "passed": true,
+        "rank": null,
+        "hit_titles": [
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "14-向量-语义改写-休假时长",
+        "requires_vector": true,
+        "passed": false,
+        "rank": null,
+        "hit_titles": [
+          "招聘流程规范",
+          "薪酬管理制度",
+          "员工培训制度",
+          "绩效考核制度"
+        ],
+        "failures": [
+          "未命中期望文档: ['员工福利制度']（实际 Top-4: ['招聘流程规范', '薪酬管理制度', '员工培训制度', '绩效考核制度']）",
+          "未命中期望文档: ['员工福利制度']（实际 Top-4: ['招聘流程规范', '薪酬管理制度', '员工培训制度', '绩效考核制度']）",
+          "未命中期望文档: ['员工福利制度']（实际 Top-4: ['招聘流程规范', '薪酬管理制度', '员工培训制度', '绩效考核制度']）"
+        ]
+      },
+      {
+        "name": "15-向量-语义改写-调薪条件",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 4,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "招聘流程规范",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "16-向量-语义改写-收入保密",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 4,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "招聘流程规范",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "17-向量-语义改写-绩效档位",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "18-向量-语义改写-新人培训",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      }
+    ]
+  },
+  "S1b": {
+    "label": "对照：jieba 分词 + RRF 融合",
+    "metrics": {
+      "mrr": 0.9559,
+      "recall_at_k": 0.9444,
+      "top1": 0.8889,
+      "passed": 18,
+      "cases": 18,
+      "ranked_cases": 17,
+      "latency_ms_median": 78.7,
+      "latency_ms_p90": 85.8,
+      "latency_ms_mean": 80.6
+    },
+    "cases": [
+      {
+        "name": "01-年假天数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "02-年假上限与递增",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "员工培训制度",
+          "绩效考核制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "03-病假婚假产假",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "04-试用期工资与转正",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "员工福利制度",
+          "绩效考核制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "05-试用期时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "招聘流程规范",
+          "薪酬管理制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "06-绩效等级对应分数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "07-绩效维度权重",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "08-面试轮次与时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "绩效考核制度",
+          "员工培训制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "09-招聘周期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "员工入职流程",
+          "薪酬管理制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "10-培训费用与服务期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "11-薪资保密",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "12-发薪日期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "招聘流程规范"
+        ],
+        "failures": []
+      },
+      {
+        "name": "13-负例-股票期权",
+        "requires_vector": false,
+        "passed": true,
+        "rank": null,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工培训制度",
+          "绩效考核制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "14-向量-语义改写-休假时长",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 4,
+        "hit_titles": [
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "15-向量-语义改写-调薪条件",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "16-向量-语义改写-收入保密",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工入职流程",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "17-向量-语义改写-绩效档位",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工入职流程",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "18-向量-语义改写-新人培训",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "招聘流程规范",
+          "员工福利制度"
+        ],
+        "failures": []
+      }
+    ]
+  },
+  "S2": {
+    "label": "+ bigram + RRF 融合（当前融合形态）",
+    "metrics": {
+      "mrr": 0.9265,
+      "recall_at_k": 0.9444,
+      "top1": 0.8333,
+      "passed": 18,
+      "cases": 18,
+      "ranked_cases": 17,
+      "latency_ms_median": 79.3,
+      "latency_ms_p90": 85.6,
+      "latency_ms_mean": 82.5
+    },
+    "cases": [
+      {
+        "name": "01-年假天数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "02-年假上限与递增",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "员工培训制度",
+          "绩效考核制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "03-病假婚假产假",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "04-试用期工资与转正",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "员工福利制度",
+          "薪酬管理制度",
+          "招聘流程规范"
+        ],
+        "failures": []
+      },
+      {
+        "name": "05-试用期时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "招聘流程规范",
+          "薪酬管理制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "06-绩效等级对应分数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "07-绩效维度权重",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "08-面试轮次与时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "绩效考核制度",
+          "员工培训制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "09-招聘周期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "员工入职流程",
+          "薪酬管理制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "10-培训费用与服务期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "11-薪资保密",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工福利制度",
+          "员工培训制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "12-发薪日期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工入职流程",
+          "员工培训制度",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "13-负例-股票期权",
+        "requires_vector": false,
+        "passed": true,
+        "rank": null,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工培训制度",
+          "绩效考核制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "14-向量-语义改写-休假时长",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 4,
+        "hit_titles": [
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "15-向量-语义改写-调薪条件",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 2,
+        "hit_titles": [
+          "员工福利制度",
+          "薪酬管理制度",
+          "绩效考核制度",
+          "招聘流程规范"
+        ],
+        "failures": []
+      },
+      {
+        "name": "16-向量-语义改写-收入保密",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工入职流程",
+          "员工培训制度",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "17-向量-语义改写-绩效档位",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工福利制度",
+          "招聘流程规范"
+        ],
+        "failures": []
+      },
+      {
+        "name": "18-向量-语义改写-新人培训",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度",
+          "招聘流程规范"
+        ],
+        "failures": []
+      }
+    ]
+  },
+  "S3": {
+    "label": "+ 重排 rerank（当前上线形态）",
+    "metrics": {
+      "mrr": 1.0,
+      "recall_at_k": 0.9444,
+      "top1": 0.9444,
+      "passed": 18,
+      "cases": 18,
+      "ranked_cases": 17,
+      "latency_ms_median": 582.7,
+      "latency_ms_p90": 659.5,
+      "latency_ms_mean": 592.8
+    },
+    "cases": [
+      {
+        "name": "01-年假天数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "02-年假上限与递增",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "03-病假婚假产假",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "04-试用期工资与转正",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "员工福利制度",
+          "绩效考核制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "05-试用期时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工入职流程",
+          "招聘流程规范",
+          "员工培训制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "06-绩效等级对应分数",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工入职流程",
+          "员工福利制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "07-绩效维度权重",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "员工福利制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "08-面试轮次与时长",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "员工入职流程",
+          "绩效考核制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "09-招聘周期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "招聘流程规范",
+          "员工培训制度",
+          "员工入职流程",
+          "绩效考核制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "10-培训费用与服务期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "员工福利制度",
+          "薪酬管理制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "11-薪资保密",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工福利制度",
+          "绩效考核制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "12-发薪日期",
+        "requires_vector": false,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "绩效考核制度",
+          "招聘流程规范",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "13-负例-股票期权",
+        "requires_vector": false,
+        "passed": true,
+        "rank": null,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工福利制度",
+          "绩效考核制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "14-向量-语义改写-休假时长",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工福利制度",
+          "薪酬管理制度",
+          "员工培训制度",
+          "招聘流程规范"
+        ],
+        "failures": []
+      },
+      {
+        "name": "15-向量-语义改写-调薪条件",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "员工福利制度",
+          "绩效考核制度",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "16-向量-语义改写-收入保密",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "薪酬管理制度",
+          "绩效考核制度",
+          "员工福利制度",
+          "员工入职流程"
+        ],
+        "failures": []
+      },
+      {
+        "name": "17-向量-语义改写-绩效档位",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "绩效考核制度",
+          "薪酬管理制度",
+          "招聘流程规范",
+          "员工培训制度"
+        ],
+        "failures": []
+      },
+      {
+        "name": "18-向量-语义改写-新人培训",
+        "requires_vector": true,
+        "passed": true,
+        "rank": 1,
+        "hit_titles": [
+          "员工培训制度",
+          "员工入职流程",
+          "招聘流程规范",
+          "员工福利制度"
+        ],
+        "failures": []
+      }
+    ]
+  }
+}

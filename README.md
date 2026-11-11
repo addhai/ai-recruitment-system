@@ -524,8 +524,8 @@ half_open --探针成功--> closed ；--探针失败--> open（重新计时）
 
 ## LLM 质量回归评测
 
-`tests/eval/` 下有一套防退化评测（22 条用例，覆盖 2 份真实简历 × 6 份真实 JD
-及边界/对抗场景）。**只断言硬性不变量**（字段存在性、结构类型、是否引用 JD 原文价值观、
+`tests/eval/` 下有一套防退化评测（26 条用例：22 条招聘评分 + 4 条知识库忠实度，
+覆盖 2 份真实简历 × 6 份真实 JD 及边界/对抗场景）。**只断言硬性不变量**（字段存在性、结构类型、是否引用 JD 原文价值观、
 未设限维度是否被误写成 0 分），分数/耗时/token 只记录不判定——实测同一份简历
 连跑 4 次文化契合给出 72/72/58/58，锁死数值只会频繁误报。
 
@@ -538,9 +538,53 @@ python tests/eval/run_eval.py --cases 01 07      # 指定用例
 需要真实 LLM 凭据，会产生 API 成本，故不进日常 CI；通过 GitHub Actions 的
 `workflow_dispatch` 手动触发（勾选 `run_evals`）。详见 `tests/eval/README.md`。
 
+## 知识库检索回归评测（L2）
+
+**调优结果与逐项归因见 [`检索调优报告.md`](检索调优报告.md)**：
+分阶段受控消融（原始实现 → +RRF 融合 → +重排）给出
+召回率 recall@4 **0.8889 → 0.9444**、Top-1 **0.7222 → 0.9444**，
+硬判据 17/18 → 18/18；代价是单次检索延迟 76ms → 583ms（重排占 503ms）。
+
+招聘评分之外，检索链路也有一套独立评测（`tests/eval/chunk_cases.json`，18 条：
+13 条词面用例 + 5 条语义改写用例），按「要不要花 API 钱」分两层跑：
+
+```bash
+# L2 离线层：纯 BM25，零网络零成本秒级完成，进日常 CI
+python tests/eval/run_chunk_eval.py
+
+# 真实向量 + 重排：需要 embedding / rerank 凭据，产生真实 API 调用
+python tests/eval/run_chunk_eval.py --vector --rerank
+```
+
+实测结论（chunk_size=500）：向量路把词面用例 Top-1 从 0.7692 提到 0.9231；
+**重排把语义改写用例的 Top-1 从 0.6 提到 1.0**。`chunk_size` 在 200~800 之间
+对排序质量无实质影响，所以保持 500 不动——没有证据支持改，也就不改。
+
+检索埋点（`retrieval_logs`）记下了每一条查询，可以从真实流量长出用例：
+
+```bash
+python tests/eval/mine_traffic.py --limit 50 --out traffic_candidates.json
+```
+
+离线层进日常 CI，向量/重排层通过 GitHub Actions 的 `workflow_dispatch`
+手动触发（勾选 `run_kb_evals`）。详见 `tests/eval/README.md`。
+
 ## 注意事项
 
 - 本地默认 SQLite 即可运行；Docker 全栈含 PostgreSQL，可按需裁剪。
+- **迁移链已在 PostgreSQL 16 上实测通过**：正向 `upgrade head`、
+  `downgrade base` → `upgrade head` 往返、以及"迁移后的 schema 与 SQLAlchemy 模型
+  零漂移"三项都验过。但**建库要走 alembic**，不要用 `Base.metadata.create_all()`——
+  那样建出来的库"表齐全但没有 alembic_version"，会被当成旧库 stamp 到基线，
+  随后基线之后的迁移重复加列而失败（失败信息里会写明这一点和两条出路）。
+- **每日 LLM 预算（`LLM_BUDGET_AMOUNT`）现在按真实花费计数**：此前同一笔成本
+  被「进程内累计」与「数据库回读」各算一次，¥5 的上限在真实花到 ¥2.5 时就会触顶；
+  非回读期间还会漏算历史与其它进程的花费。已修正并补了口径测试。
+- **`LLM_TIMEOUT_SECONDS` 是单次 HTTP 请求的超时，不是整次调用的上限**：
+  客户端还会重试 2 次，所以单次模型调用最坏约 3 倍（实测 136s），
+  而一条简历要串行调约 8 次模型，尾延迟可能到分钟级。
+  超时后的降级是"改用规则模板算分"，分数与模型算出来的长得一样——
+  排障时先看 `llm_call_logs` 里的 `degraded` 标记。
 - 生产部署务必修改 `SECRET_KEY` / `JWT_SECRET_KEY`，并配置真实 LLM 与 embedding 凭据。
 - `EMBEDDING_MODEL` 必须与 embedding 提供方的模型及维度一致（如 bge-m3 对应 1024 维），否则向量检索会报错。
 - **端口占用**：本机 8000 端口若被 Docker 容器或其他服务占用，Windows 下 `localhost` 会优先解析到 IPv6，
