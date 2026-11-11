@@ -39,6 +39,12 @@ class RecruitmentState(TypedDict, total=False):
     needs_review: Optional[bool]
     review_reason: Optional[str]
     review_detail: Optional[Dict[str, Any]]
+    # 本次运行里**用了兜底值**的维度。
+    #
+    # 为什么需要单独记：LLM 调用失败时 invoke_json 会降级返回 default，
+    # 而 default 里多数是「70 分」——它看起来像一个正常评分，实际根本没评。
+    # 不记下来，HR 看到的就是「模型给了他 70 分」，而真相是模型挂了。
+    degraded_dimensions: Optional[List[str]]
     interview_r3_skipped: Optional[bool]
     culture_unconstrained: Optional[bool]
     unconstrained_dimensions: Optional[List[str]]
@@ -105,7 +111,9 @@ async def parse_resume(state: RecruitmentState) -> RecruitmentState:
         call_site="parse_resume",
     )
         # 保留上传时留存的原文快照，避免解析结果覆盖后丢失简历正文
-        parsed = {**raw_snapshot, **parsed}
+        # 注意要挡掉"模型返回的不是 dict"（例如返回了一个数组）——
+        # `{**a, **b}` 在 b 不是映射时会直接抛 TypeError，整条任务就死在这。
+        parsed = {**raw_snapshot, **(parsed if isinstance(parsed, dict) else {})}
         skills = parsed.get("skills") or parsed.get("skills_technical")
         db.save_resume_parsed(cid, parsed, skills=skills)
     return {**state, "parsed_resume": parsed, "workflow_progress": 5, "current_step": "parse_resume"}
@@ -125,8 +133,10 @@ async def extract_skills(state: RecruitmentState) -> RecruitmentState:
 
         call_site="extract_skills",
     )
-    merged = {**parsed, **skills_data}
-    db.save_resume_parsed(state["candidate_id"], merged, skills=skills_data.get("skills_technical"))
+    merged = {**parsed, **(skills_data if isinstance(skills_data, dict) else {})}
+    db.save_resume_parsed(state["candidate_id"], merged,
+                           skills=skills_data.get("skills_technical")
+                           if isinstance(skills_data, dict) else None)
     return {**state, "parsed_resume": merged, "workflow_progress": 10, "current_step": "extract_skills"}
 
 
@@ -193,6 +203,98 @@ def _unconstrained_dims(state: RecruitmentState) -> List[str]:
     return list(state.get("unconstrained_dimensions") or [])
 
 
+# ================================================================ LLM 输出的类型防御
+#
+# 为什么需要这一层：`invoke_json` 只保证「返回的是可解析的 JSON」，
+# 不保证**字段类型**对。模型完全可能返回 {"score": null} 或 {"score": "优秀"}，
+# 而节点里一句 `float(result.get("score", 70))` 就会抛 ValueError/TypeError，
+# 异常一路冒到驱动层，整条任务直接判失败——前面几个维度已经评完、
+# 钱已经花了，全白费。
+#
+# 实测（故障注入，20 组/模式）：类型违规注入下任务存活率只有 0.400，
+# 而超时/5xx/坏 JSON 注入下是 1.000——因为后三者被 invoke_json 捕获并降级了，
+# 只有类型违规会穿透。
+#
+# 所以这里把"字段类型不对"当成和"调用失败"同等的降级：取兜底值，
+# 并把该维度记进 degraded_dimensions，让 HR 知道这个分不是模型给的。
+
+def _score_of(result: Any, default: float = 70.0) -> float:
+    """从 LLM 结果里取分数，取不到或类型不对就用兜底值。
+
+    刻意不抛异常：分数缺失只是一个维度不可用，不该让整条任务死掉。
+    """
+    if not isinstance(result, dict):
+        return default
+    raw = result.get("score", default)
+    if isinstance(raw, bool):          # bool 是 int 的子类，单独挡掉
+        return default
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        try:
+            return float(raw.strip())
+        except ValueError:
+            return default
+    return default
+
+
+def _list_of(result: Any, key: str) -> List[Any]:
+    """从 LLM 结果里取列表字段，类型不对就当空列表。
+
+    对应的是 `",".join(result.get(k, [])[:6])` 这类写法：
+    字段是字符串时切片出的是单个字符，字段是 int 时切片直接抛 TypeError。
+    """
+    if not isinstance(result, dict):
+        return []
+    value = result.get(key)
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return []
+
+
+def _degraded_dims(state: RecruitmentState) -> List[str]:
+    """本次运行里用了兜底值的维度清单"""
+    return list(state.get("degraded_dimensions") or [])
+
+
+def _mark_degraded(state: RecruitmentState, dimension: str) -> List[str]:
+    """把某个维度标记为"用了兜底值"，返回更新后的清单（幂等，不重复记）"""
+    dims = _degraded_dims(state)
+    if dimension not in dims:
+        dims.append(dimension)
+    return dims
+
+
+def _is_fallback(result: Any, default: Any) -> bool:
+    """判断结果是不是 invoke_json 降级时**原样返回**的兜底值。
+
+    invoke_json 失败时返回的就是传入的 default 对象本身，所以等值比较
+    能可靠地认出"这一次调用挂了、拿的是兜底"。
+    （万一模型恰好返回了和兜底一模一样的内容，会被保守地标成降级——
+    这个方向的误差只是多提示一句，不会把真评分误判成没评。）
+    """
+    return (isinstance(result, dict) and isinstance(default, dict)
+            and result == default)
+
+
+def _scored(result: Any, default: Any,
+            default_score: float = 70.0) -> Tuple[float, bool]:
+    """取分数并判断这个分**是不是模型给的**。
+
+    返回 (score, degraded)：
+    - degraded=True ⇒ 这个分数是兜底值（调用失败走了 default，或字段类型
+      不对被强转），必须让 HR 知道——否则"模型挂了"会被读成"模型给了他 70 分"。
+    """
+    if not isinstance(result, dict):
+        return default_score, True
+    raw = result.get("score")
+    score = _score_of(result, default_score)
+    type_bad = isinstance(raw, bool) or not isinstance(raw, (int, float))
+    return score, bool(_is_fallback(result, default) or type_bad)
+
+
 async def evaluate_skill_match(state: RecruitmentState) -> RecruitmentState:
     parsed = state.get("parsed_resume") or {}
     required = _jd_required_skills(state)
@@ -230,14 +332,18 @@ async def evaluate_skill_match(state: RecruitmentState) -> RecruitmentState:
 
         call_site="evaluate_skill_match",
     )
-    score = float(result.get("score", 70))
-    missing = result.get("missing_skills", []) or []
+    score, degraded = _scored(result, {"matched_skills": [], "missing_skills": [], "score": 70})
+    matched = _list_of(result, "matched_skills")
+    missing = _list_of(result, "missing_skills")
     db.upsert_evaluation(state["candidate_id"], "技能匹配", score,
-                         f"匹配: {','.join(result.get('matched_skills', [])[:6])}"
-                         f"{'；缺失: ' + ','.join(missing[:6]) if missing else ''}"
-                         f"；{result.get('reason', '')}")
-    return {**state, "skill_match_score": score, "skill_match_details": result,
-            "workflow_progress": 18, "current_step": "evaluate_skill_match"}
+                         f"匹配: {','.join(str(x) for x in matched[:6])}"
+                         f"{'；缺失: ' + ','.join(str(x) for x in missing[:6]) if missing else ''}"
+                         f"；{str(result.get('reason') or '')}")
+    out = {**state, "skill_match_score": score, "skill_match_details": result,
+           "workflow_progress": 18, "current_step": "evaluate_skill_match"}
+    if degraded:
+        out["degraded_dimensions"] = _mark_degraded(state, "skill_match_score")
+    return out
 
 
 async def evaluate_experience(state: RecruitmentState) -> RecruitmentState:
@@ -305,11 +411,15 @@ async def evaluate_experience(state: RecruitmentState) -> RecruitmentState:
 
         call_site="evaluate_experience",
     )
-    score = float(result.get("score", 70))
-    db.upsert_evaluation(state["candidate_id"], "经验匹配", score, result.get("analysis", ""))
-    return {**state, "experience_score": score,
-            "skill_match_details": {**(state.get("skill_match_details") or {}), "experience_analysis": result},
-            "workflow_progress": 26, "current_step": "evaluate_experience"}
+    score, degraded = _scored(result, {"analysis": "经验评估降级", "score": 70})
+    db.upsert_evaluation(state["candidate_id"], "经验匹配", score,
+                         str(result.get("analysis") or ""))
+    out = {**state, "experience_score": score,
+           "skill_match_details": {**(state.get("skill_match_details") or {}), "experience_analysis": result},
+           "workflow_progress": 26, "current_step": "evaluate_experience"}
+    if degraded:
+        out["degraded_dimensions"] = _mark_degraded(state, "experience_score")
+    return out
 
 
 async def evaluate_education(state: RecruitmentState) -> RecruitmentState:
@@ -354,11 +464,15 @@ async def evaluate_education(state: RecruitmentState) -> RecruitmentState:
 
         call_site="evaluate_education",
     )
-    score = float(result.get("score", 70))
-    db.upsert_evaluation(state["candidate_id"], "教育匹配", score, result.get("analysis", ""))
-    return {**state, "education_score": score,
-            "skill_match_details": {**(state.get("skill_match_details") or {}), "education_analysis": result},
-            "workflow_progress": 33, "current_step": "evaluate_education"}
+    score, degraded = _scored(result, {"analysis": "教育评估降级", "score": 70})
+    db.upsert_evaluation(state["candidate_id"], "教育匹配", score,
+                         str(result.get("analysis") or ""))
+    out = {**state, "education_score": score,
+           "skill_match_details": {**(state.get("skill_match_details") or {}), "education_analysis": result},
+           "workflow_progress": 33, "current_step": "evaluate_education"}
+    if degraded:
+        out["degraded_dimensions"] = _mark_degraded(state, "education_score")
+    return out
 
 
 async def assess_cultural_fit(state: RecruitmentState) -> RecruitmentState:
@@ -408,12 +522,19 @@ async def assess_cultural_fit(state: RecruitmentState) -> RecruitmentState:
 
         call_site="assess_cultural_fit",
     )
-    score = float(result.get("score", 70))
+    score, degraded = _scored(
+        result, {"evidence": [], "score": 70, "reasons": ["文化评估降级，默认通过"]})
+    reasons = _list_of(result, "reasons")
     db.upsert_evaluation(state["candidate_id"], "文化契合", score,
-                         "；".join(result.get("reasons", []))[:300])
+                         "；".join(str(r) for r in reasons)[:300])
 
     # 三段判定所需标记（幂等覆盖写：节点重放时结果一致）
-    degraded = not result.get("reasons") and not result.get("evidence")
+    #
+    # degraded 此前是 `not reasons and not evidence` 判的——但兜底 default
+    # **自带 reasons**（"文化评估降级，默认通过"），所以 LLM 挂了反而判成
+    # False，兜底 70 分被当成模型给的正常评分。而 70 >= 复核下限，
+    # 它会直接放行候选人进入下一关，HR 从头到尾看不出这个分是假的。
+    # 现在改成"是否原样返回了兜底值"，这才是降级的真实判据。
     in_review_band = (settings.CULTURE_REVIEW_THRESHOLD <= score < settings.CULTURE_PASS_THRESHOLD)
     review_detail = {
         "dimension": "文化契合",
@@ -424,13 +545,16 @@ async def assess_cultural_fit(state: RecruitmentState) -> RecruitmentState:
         # 降级默认分（LLM 挂了）也 >= 复核下限，会直接放行，必须让 HR 知道这是兜底值
         "degraded": degraded,
     }
-    return {**state, "culture_match_score": score, "culture_match_details": result,
-            "culture_unconstrained": False,
-            "unconstrained_dimensions": _unconstrained_dims(state),
-            "needs_review": in_review_band,
-            "review_reason": "文化契合处于待复核区间" if in_review_band else None,
-            "review_detail": review_detail if in_review_band else None,
-            "workflow_progress": 40, "current_step": "assess_cultural_fit"}
+    out = {**state, "culture_match_score": score, "culture_match_details": result,
+           "culture_unconstrained": False,
+           "unconstrained_dimensions": _unconstrained_dims(state),
+           "needs_review": in_review_band,
+           "review_reason": "文化契合处于待复核区间" if in_review_band else None,
+           "review_detail": review_detail if in_review_band else None,
+           "workflow_progress": 40, "current_step": "assess_cultural_fit"}
+    if degraded:
+        out["degraded_dimensions"] = _mark_degraded(state, "culture_match_score")
+    return out
 
 
 def check_culture_pass(state: RecruitmentState) -> str:
@@ -537,14 +661,20 @@ async def questionnaire_stage(state: RecruitmentState) -> RecruitmentState:
         {"score": int(60 + 30 * answered / total), "feedback": "规则评分：按作答完整度估算"},
         call_site="score_questionnaire",
     )
-    score = int(max(0, min(100, scoring.get("score", 60))))
+    raw_score = _score_of(scoring, 60.0)
+    score = int(max(0, min(100, raw_score)))
+    feedback = str(scoring.get("feedback") or "") if isinstance(scoring, dict) else ""
 
     db.save_questionnaire_response(cid, questionnaire_id, responses if isinstance(responses, dict) else {"answers": responses}, score)
-    db.upsert_evaluation(cid, "问卷测评", score, scoring.get("feedback", "")[:300])
+    db.upsert_evaluation(cid, "问卷测评", score, feedback[:300])
     await sse.notify_questionnaire_submitted(cid, questionnaire_id, score)
 
-    return {**state, "questionnaire_id": questionnaire_id, "questionnaire_score": score,
-            "workflow_progress": 52, "current_step": "questionnaire_scored"}
+    out = {**state, "questionnaire_id": questionnaire_id, "questionnaire_score": score,
+           "workflow_progress": 52, "current_step": "questionnaire_scored"}
+    if _is_fallback(scoring, {"score": int(60 + 30 * answered / total),
+                               "feedback": "规则评分：按作答完整度估算"}):
+        out["degraded_dimensions"] = _mark_degraded(state, "questionnaire_score")
+    return out
 
 
 def check_questionnaire_pass(state: RecruitmentState) -> str:
@@ -671,9 +801,9 @@ def make_interview_node(round_no: int, progress_schedule: int, progress_done: in
                 "questions": questions,
             })
 
-            score = int(result.get("score", 0))
-            feedback = result.get("feedback", "")
-            notes = result.get("notes")
+            score = int(_score_of(result, 0.0))
+            feedback = str(result.get("feedback") or "") if isinstance(result, dict) else ""
+            notes = result.get("notes") if isinstance(result, dict) else None
             db.complete_interview_record(interview_id, score, feedback, notes)
             await sse.notify_interview_completed(cid, interview_id, score, feedback)
 
@@ -866,14 +996,21 @@ async def generate_hiring_decision(state: RecruitmentState) -> RecruitmentState:
         call_site="generate_hiring_decision",
     )
 
+    decision = decision if isinstance(decision, dict) else {}
     final_decision = decision.get("decision") or rule_decision
     decision["overall_score"] = capped  # 综合分始终以规则计算为准
     decision["assessed_dimensions"] = assessed  # 让前端能提示"本分数基于 N 个维度"
-    db.upsert_evaluation(cid, "综合评审", capped, "；".join(decision.get("reasons", []))[:300])
+    db.upsert_evaluation(cid, "综合评审", capped,
+                         "；".join(str(r) for r in _list_of(decision, "reasons"))[:300])
 
-    return {**state, "final_decision": final_decision,
-            "final_recommendation": decision, "overall_score": capped,
-            "workflow_progress": 92, "current_step": "generate_hiring_decision"}
+    out = {**state, "final_decision": final_decision,
+           "final_recommendation": decision, "overall_score": capped,
+           "workflow_progress": 92, "current_step": "generate_hiring_decision"}
+    if _is_fallback(decision, {"decision": rule_decision,
+                                "reasons": [f"规则综合评分 {capped} 分，档位 {rule_decision}"],
+                                "risks": []}):
+        out["degraded_dimensions"] = _mark_degraded(state, "final_decision")
+    return out
 
 
 def check_final_decision(state: RecruitmentState) -> str:
