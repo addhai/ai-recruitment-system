@@ -35,7 +35,7 @@ DEEPSEEK_PRESETS: Dict[str, Dict[str, Any]] = {
         "currency": "CNY",
         "peak_multiplier": 2.0,
         "temperature": 0.1,
-        "timeout_seconds": 45,
+        "timeout_seconds": 90,
         "note": "并发限制 2500。旧模型名 deepseek-v4-flash 仍可调用但已下线，按 Flash 价格计费。",
     },
     "deepseek-v4-pro": {
@@ -46,7 +46,7 @@ DEEPSEEK_PRESETS: Dict[str, Dict[str, Any]] = {
         "currency": "CNY",
         "peak_multiplier": 2.0,
         "temperature": 0.1,
-        "timeout_seconds": 45,
+        "timeout_seconds": 90,
         "note": "并发限制 500。",
     },
 }

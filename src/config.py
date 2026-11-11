@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -119,7 +120,25 @@ class Settings(BaseSettings):
 
     # 评分类任务要求低温度保证同分输入结果稳定可复现（可被数据库配置覆盖）
     LLM_TEMPERATURE: float = 0.1
-    LLM_TIMEOUT_SECONDS: int = 45
+
+    # 单次 HTTP 请求超时（秒）。
+    #
+    # 此前是 45 秒，配合 max_retries=2，单次调用最坏要等 45×3=135 秒才放弃。
+    # 实测（507 次真实调用）parse_job_description 的延迟是**双峰**的：
+    # p50 只有 4.2 秒，但 p90 高达 86.6 秒、峰值 136.4 秒——因为它要输出
+    # 8000+ tokens。45 秒的超时会把「只是慢、其实能成功」的调用误判成失败，
+    # 而重试是**全损重来**：前两次烧掉的 token 白花，延迟也翻三倍。
+    #
+    # 所以把超时放宽到 90 秒、同时把重试次数减到 1：
+    # 单次最坏从 135 秒降到 90 秒，慢任务不再被误杀，无效重试也少一半。
+    LLM_TIMEOUT_SECONDS: int = 90
+
+    # 单次调用的重试次数。
+    #
+    # 同样是推理型模型，同样的 prompt 重试很可能再次超时——那不是"再试一次
+    # 就能成"，而是把同一份延迟与花费再付一遍。改为 1（总共 2 次尝试），
+    # 想更保守可以配 0（不重试）。
+    LLM_MAX_RETRIES: int = 1
 
     # ---------------------------------------------------------------- LLM 熔断
     # 供应商整体故障时，每个调用都要耗完自己的重试预算才降级；
@@ -183,6 +202,26 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+    @model_validator(mode="after")
+    def _empty_string_falls_back_to_default(self):
+        """环境变量为空串时回退到默认值，而不是把默认值顶掉。
+
+        为什么需要这一条：GitHub 对**未配置**的 Actions secret 传的是空串，
+        不是"不设置"。pydantic 会把空串当成合法值，于是 `RERANK_MODEL=""`
+        会把 `BAAI/bge-reranker-v2-m3` 顶掉，重排请求带着空模型名发出去，
+        必然失败——而预检里 RERANK_* 明明写的是"可选"。
+
+        对"可选配置"来说，空串应当等价于"没配"，所以这里统一回退。
+        只处理**默认值为非空字符串**的字段：像 EMBEDDING_API_KEY、
+        RERANK_API_KEY 这种默认就是空的，代码里有显式的回退语义
+        （复用 LLM_API_KEY），不能被这里改掉。
+        """
+        for name, field in type(self).model_fields.items():
+            default = field.default
+            if isinstance(default, str) and default and getattr(self, name, None) == "":
+                setattr(self, name, default)
+        return self
 
 
 settings = Settings()

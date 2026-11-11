@@ -46,7 +46,10 @@ def get_llm(temperature: Optional[float] = None) -> ChatOpenAI:
             model=cfg["model"],
             temperature=temp,
             timeout=cfg["timeout_seconds"] or settings.LLM_TIMEOUT_SECONDS,
-            max_retries=2,
+            # 重试次数做成配置项：重试不是免费的——同一 prompt 在推理型模型上
+            # 再次超时的概率很高，那是把同一份延迟与花费再付一遍。
+            # 默认 1（总共 2 次尝试），需要更保守可配 0。
+            max_retries=settings.LLM_MAX_RETRIES,
             api_key=cfg["api_key"],
             base_url=cfg["base_url"],
         )
