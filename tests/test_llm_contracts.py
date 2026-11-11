@@ -105,9 +105,10 @@ def _fake_raw(payloads, calls=None):
     seq = list(payloads)
     calls = calls if calls is not None else []
 
-    async def _raw(prompt_text, variables, call_site, candidate_id, client=None):
+    async def _raw(prompt_text, variables, call_site, candidate_id, client=None,
+                   raw=False):
         calls.append({"prompt": prompt_text, "call_site": call_site,
-                      "variables": variables})
+                      "variables": variables, "raw": raw})
         content = seq.pop(0) if seq else "{}"
         msg = AIMessage(content=content)
         return msg, {"model": "m", "model_served": "m", "base_url": "http://x",
@@ -115,6 +116,29 @@ def _fake_raw(payloads, calls=None):
                      "latency_ms": 10}
 
     return _raw, calls
+
+
+class _StubLLM:
+    """最小可用的模型桩：记录每次收到的 payload，按顺序吐出预设文本。
+
+    刻意**不** mock `_invoke_raw`——修正式调用的模板 bug 就藏在那一层，
+    mock 掉它等于把被测代码换成自己写的假货，测不出任何东西。
+
+    带上 usage_metadata：不带的话成本会记 0，
+    "修正调用有真实花费必须入账"这条就验不出来。
+    """
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.seen = []
+
+    def invoke(self, payload):
+        self.seen.append(payload)
+        return AIMessage(
+            content=self.replies.pop(0),
+            usage_metadata={"input_tokens": 30, "output_tokens": 20,
+                            "total_tokens": 50},
+        )
 
 
 def _log_mark():
@@ -247,3 +271,88 @@ class TestInvokeJsonContract:
         assert len(calls) == 1
         assert out == {"whatever": 1}
         assert _logs_since(mark)[-1].schema_valid is None
+
+
+class TestRepairCallReallyRuns:
+    """走真实 `_invoke_raw`（只桩模型），专门盯修正调用的模板问题。
+
+    ## 为什么这组测试必须存在
+
+    上面 `TestInvokeJsonContract` 全部把 `_invoke_raw` 整个 mock 掉了——
+    于是"修正调用到底有没有真的发出去"根本没被验证。
+
+    实测踩到的坑：修正提示词里嵌着**原输出的 JSON** 与**JSON 模板**，两者都带
+    `{` `}`。`_invoke_raw` 原本把任何 prompt 都塞进 `PromptTemplate`
+    （f-string 风格），花括号被当成占位符解析，直接抛
+
+        Invalid format specifier in f-string template.
+        Nested replacement fields are not allowed
+
+    结果修正调用**一次都没成功过**：每次都记一行 failed、cost=0，
+    然后退回原结果。任务照常跑完，埋点里也只有一行"failed"，
+    看起来像"模型这次没修好"，而不是"修正机制根本没通"。
+    实测 after 轮 7 次修正全部 failures，修正成功率 0/7。
+
+    所以这里**不 mock `_invoke_raw`**，只桩模型，让模板真正跑一遍。
+    """
+
+    def test_repair_prompt_with_braces_is_sent_without_template(self, monkeypatch):
+        """带花括号的修正提示词必须原样发送，不能被当成 f-string 模板"""
+        stub = _StubLLM([
+            json.dumps({"score": None, "matched_skills": [], "missing_skills": []}),
+            json.dumps({"score": 77, "matched_skills": ["Go"], "missing_skills": []}),
+        ])
+        monkeypatch.setattr(llm_invoke, "get_llm", lambda: stub)
+        mark = _log_mark()
+
+        out = asyncio.run(llm_invoke.invoke_json(
+            "请评估这份简历：{resume_text}", {"resume_text": "5 年 Python 经验"},
+            {"score": 70}, "evaluate_skill_match"))
+
+        # 首次不合规 -> 修正一次 -> 用修正结果
+        assert out["score"] == 77, "修正结果没被采用，说明修正调用又失败了"
+        assert len(stub.seen) == 2, f"应当正好两次调用，实际 {len(stub.seen)} 次"
+
+        # 第一次走正常模板：PromptTemplate 渲染出来的是 StringPromptValue
+        # （不是裸 str），占位符已经被替换成实际值。
+        first = stub.seen[0]
+        first_text = first.to_string() if hasattr(first, "to_string") else str(first)
+        assert "5 年 Python 经验" in first_text, "正常的模板路径应当完成变量替换"
+        assert "{resume_text}" not in first_text
+
+        # 第二次是修正：**原样发送整段文本**，是裸 str，
+        # 里面带 JSON 花括号也没被当占位符解析——这正是修复点。
+        repair_payload = stub.seen[1]
+        assert isinstance(repair_payload, str), \
+            f"修正提示词必须原样发送，实际类型 {type(repair_payload).__name__}"
+        assert "{" in repair_payload and "}" in repair_payload, \
+            "修正提示词本身就含花括号，原样发送才对"
+
+        logs = _logs_since(mark)
+        repair = [l for l in logs if l.is_repair][-1]
+        assert repair.status == "ok", f"修正调用仍然失败：{repair.error}"
+        assert repair.cost and repair.cost > 0, "修正调用有真实花费，必须记上"
+
+    def test_repair_failure_is_recorded_with_real_cost(self, monkeypatch):
+        """模型真的修不好时才记失败——并且要带上真实花费"""
+        stub = _StubLLM([
+            json.dumps({"score": None, "matched_skills": [], "missing_skills": []}),
+            json.dumps({"score": "优秀", "matched_skills": [], "missing_skills": []}),
+        ])
+        monkeypatch.setattr(llm_invoke, "get_llm", lambda: stub)
+        mark = _log_mark()
+
+        out = asyncio.run(llm_invoke.invoke_json(
+            "请评估这份简历：{resume_text}", {"resume_text": "5 年 Python 经验"},
+            {"score": 70}, "evaluate_skill_match"))
+
+        # 修不好就保留原结果，不本地编造
+        assert out["score"] is None
+        logs = _logs_since(mark)
+        original = [l for l in logs if not l.is_repair][-1]
+        repair = [l for l in logs if l.is_repair][-1]
+        assert original.schema_valid is False
+        assert original.schema_fixed is False
+        # 这次失败是"模型给出的仍不合规"，不是"模板炸了"
+        assert repair.status == "ok"
+        assert repair.cost and repair.cost > 0

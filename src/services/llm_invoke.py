@@ -169,12 +169,24 @@ def _semaphore() -> Optional[asyncio.Semaphore]:
 
 
 async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: str,
-                      candidate_id: Optional[int], client=None):
+                      candidate_id: Optional[int], client=None, raw: bool = False):
     """预算预检 → 并发闸门 → 发起调用 → 返回 (AIMessage, 元信息)。
 
     client 为 None 时用默认客户端；知识库问答有自己的 temperature=0.3 客户端
     （与招聘评估的 0.1 不同，生成式回答需要更高随机性），通过此参数传入，
     这样既能统一埋点，又不会悄悄改掉它实际使用的模型。
+
+    ## raw=True：整段文本原样发送，不做模板格式化
+
+    用于修正调用：修正提示词里嵌着**原输出的 JSON** 和**JSON 模板**，
+    两者都带 `{` `}`。走 PromptTemplate（f-string 风格）时，这些花括号会被
+    当成占位符解析，实测直接抛
+
+        Invalid format specifier in f-string template.
+        Nested replacement fields are not allowed
+
+    也就是说修正调用**一次都没成功过**——每次都失败、记一行 failed、然后
+    退回原结果。这类"整段就是一个消息"的场景必须绕开模板。
 
     BudgetExceeded 由调用方决定如何处理（工作流要转人工，JD 解析要报错）。
     """
@@ -188,21 +200,26 @@ async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: st
 
     llm = client or get_llm()
     model, base_url = _client_info(llm)
-    prompt = PromptTemplate(template=prompt_text, input_variables=list(variables.keys()))
     # 组链要求 Runnable；已是 Runnable 的原样使用（如测试桩的 RunnableLambda）
     runnable = llm if hasattr(llm, "invoke") and hasattr(llm, "input_schema") \
         else RunnableLambda(llm.invoke)
-    chain = prompt | runnable
+    if raw:
+        chain = runnable
+        payload: Any = prompt_text
+    else:
+        chain = PromptTemplate(template=prompt_text,
+                               input_variables=list(variables.keys())) | runnable
+        payload = variables
 
     started = time.time()
     sem = _semaphore()
     try:
         if sem is None:
-            msg = await asyncio.to_thread(chain.invoke, variables)
+            msg = await asyncio.to_thread(chain.invoke, payload)
         else:
             # 只在"等待 + 调用"这段占用名额，埋点/记账不占
             async with sem:
-                msg = await asyncio.to_thread(chain.invoke, variables)
+                msg = await asyncio.to_thread(chain.invoke, payload)
     except Exception:
         # 只有请求层面的失败计入熔断。
         # JSON 解析失败发生在这之后（调用其实成功了），属于输出质量问题，
@@ -236,7 +253,10 @@ async def _repair_call(contract, bad_value: Any, errors, call_site: str,
 
     prompt_text = llm_contracts.repair_prompt(contract, bad_value, errors)
     try:
-        msg, meta = await _invoke_raw(prompt_text, {}, call_site, candidate_id, client)
+        # raw=True：修正提示词里含原输出的 JSON 与 JSON 模板（都带花括号），
+        # 走 PromptTemplate 会被 f-string 当占位符解析而失败。
+        msg, meta = await _invoke_raw(prompt_text, {}, call_site, candidate_id,
+                                      client, raw=True)
     except budget.BudgetExceeded:
         # 预算不够做修正：原结果仍然可用（节点层有类型防御），
         # 不能因为"修不了"就让整条任务死在半路。
