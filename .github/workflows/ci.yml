@@ -21,6 +21,10 @@ on:
         description: 每条用例重复次数（>1 用于观察数值波动）
         type: string
         default: "1"
+      run_kb_evals:
+        description: 是否运行知识库检索回归（真实 embedding + rerank，产生真实 API 成本）
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -80,6 +84,94 @@ jobs:
           NPM_REGISTRY: https://registry.npmjs.org
         run: docker compose build
 
+  # 知识库 chunk 策略回归（检索层）。
+  # 走 BM25 路径，全在本进程内算，无网络、无 API 成本、结果可复现，
+  # 所以**可以进日常构建**——这和 LLM 质量评测的取舍正好相反（那边每次
+  # 要跑上百次真实模型调用，有固定成本，且采样不可复现，只能手动触发）。
+  #
+  # 日常门禁由 tests/test_chunk_strategy.py 承担（已含在 backend job 的
+  # pytest 里）；这个 job 额外跑一遍参数 sweep，产出报告 artifact，
+  # 用来在**改 chunk 策略**时看清安全边界落在哪。
+  chunk-eval:
+    name: Chunk Strategy Regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run chunk regression + sweep
+        # sweep 里的 FAIL 是"该参数组合已失效"的发现，不是门禁失败；
+        # 退出码只看当前生效参数那一轮。
+        run: python tests/eval/run_chunk_eval.py --sweep --out chunk_report.json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chunk-eval-report
+          path: chunk_report.json
+          if-no-files-found: warn
+
+  # 手动触发的知识库检索回归：走**真实** embedding 与 rerank 接口。
+  #
+  # 为什么单独一条 lane、且不进日常构建：
+  # - 真实 embedding + rerank 每次全量 18 条用例要打几十次外部接口，有固定成本；
+  # - 结果含模型行为，采样不完全可复现，不适合当每次 push 的门禁。
+  #
+  # 日常门禁由 tests/test_chunk_strategy.py（离线 BM25、零网络、秒级）承担；
+  # 这一条负责验证「向量路 + 重排路」这两条只在有凭据时才跑得起来的分支。
+  kb-eval:
+    name: Knowledge Base Retrieval Regression (manual)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_kb_evals }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Preflight - required secrets must be configured
+        env:
+          EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
+          EMBEDDING_API_BASE: ${{ secrets.EMBEDDING_API_BASE }}
+          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          required = ("EMBEDDING_API_KEY", "EMBEDDING_API_BASE", "EMBEDDING_MODEL")
+          missing = [v for v in required if not os.environ.get(v, "").strip()]
+          if missing:
+              # GitHub 对未配置的 secret 传空串（不是"不设置"），
+              # 空串会覆盖代码里的默认网关地址——先说清楚，别让评测背锅。
+              print("::error::仓库 secrets 未配置: " + " ".join(missing), file=sys.stderr)
+              print("::error::请在 Settings -> Secrets 里补齐后重跑。", file=sys.stderr)
+              sys.exit(1)
+          print("预检通过: embedding 凭据已配置（RERANK_* 可选，缺省时复用 embedding 网关）")
+          PY
+      - name: Run retrieval eval (BM25 + vector + rerank)
+        env:
+          EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
+          EMBEDDING_API_BASE: ${{ secrets.EMBEDDING_API_BASE }}
+          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+          # 重排默认复用 embedding 那一套网关；若分开配置则用这组
+          RERANK_API_KEY: ${{ secrets.RERANK_API_KEY }}
+          RERANK_API_BASE: ${{ secrets.RERANK_API_BASE }}
+          RERANK_MODEL: ${{ secrets.RERANK_MODEL }}
+          SECRET_KEY: kb-eval-secret
+        run: python tests/eval/run_chunk_eval.py --vector --rerank --out kb_eval_report.json
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kb-eval-report
+          path: kb_eval_report.json
+          if-no-files-found: warn
+
   # 手动触发的 LLM 质量回归评测（防退化）。
   # 需要仓库配置 secrets：LLM_API_KEY / LLM_API_BASE / LLM_MODEL /
   # EMBEDDING_API_KEY / EMBEDDING_API_BASE / EMBEDDING_MODEL
@@ -95,6 +187,26 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -r requirements.txt
+      - name: Preflight - required secrets must be configured
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_API_BASE: ${{ secrets.LLM_API_BASE }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          EMBEDDING_API_KEY: ${{ secrets.EMBEDDING_API_KEY }}
+          EMBEDDING_API_BASE: ${{ secrets.EMBEDDING_API_BASE }}
+          EMBEDDING_MODEL: ${{ secrets.EMBEDDING_MODEL }}
+        run: |
+          python - <<'PY'
+          import os, sys
+          required = ("LLM_API_KEY", "LLM_API_BASE", "LLM_MODEL",
+                      "EMBEDDING_API_KEY", "EMBEDDING_API_BASE", "EMBEDDING_MODEL")
+          missing = [v for v in required if not os.environ.get(v, "").strip()]
+          if missing:
+              print("::error::仓库 secrets 未配置: " + " ".join(missing), file=sys.stderr)
+              print("::error::请在 Settings -> Secrets 里补齐后重跑。", file=sys.stderr)
+              sys.exit(1)
+          print("预检通过: LLM 与 embedding 凭据均已配置")
+          PY
       - name: Run eval suite
         env:
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
