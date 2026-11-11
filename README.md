@@ -252,6 +252,12 @@ GitHub Actions（`.github/workflows/ci.yml`）在每次 `push` / `pull_request` 
 > 国内镜像源，而 Runner 在海外。之前没覆盖时这一步要跑 30~45 分钟——比另两个 job 加起来
 > 还长一个数量级，其中绝大部分时间花在跨境下载依赖上，并不是在验证什么。
 
+> `ci.yml` 里配了 `concurrency: cancel-in-progress: true`：**同一分支上再推一次，
+> 正在跑的那一轮会被取消**。取消不是失败，但已经跑了一半的 job（比如 docker-build）
+> 不会给出结论，只会在列表里显示为 `cancelled`。
+> 所以想让某个 commit 拿到完整绿灯，就等它那一轮跑完再推下一个；
+> 连续推送时只有最后一轮有意义，前几轮的结论都是被取消掉的半截结果。
+
 ### 前端单测
 
 ```bash
