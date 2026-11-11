@@ -27,6 +27,7 @@ from src.config import settings
 from src.logging_setup import get_logger
 from src.services import budget
 from src.services import circuit_breaker
+from src.services import llm_contracts
 
 logger = get_logger(__name__)
 
@@ -84,7 +85,11 @@ def _write_log(*, call_site: str, model: str, base_url: str,
                input_tokens, output_tokens, cost: float,
                latency_ms: int, status: str, degraded: bool,
                prompt_text: str, candidate_id: Optional[int],
-               error: Optional[str], model_served: Optional[str] = None) -> None:
+               error: Optional[str], model_served: Optional[str] = None,
+               schema_valid: Optional[bool] = None,
+               schema_fixed: Optional[bool] = None,
+               schema_errors: Optional[str] = None,
+               is_repair: bool = False) -> None:
     """写 LLMCallLog。任何写库失败都不能影响主流程。"""
     try:
         from src.models.database import SessionLocal, LLMCallLog, ensure_tables
@@ -113,6 +118,10 @@ def _write_log(*, call_site: str, model: str, base_url: str,
                 usage_missing=input_tokens is None and output_tokens is None,
                 prompt_hash=_prompt_hash(prompt_text),
                 error=(error or "")[:500] or None,
+                schema_valid=schema_valid,
+                schema_fixed=schema_fixed,
+                schema_errors=(schema_errors or "")[:1000] or None,
+                is_repair=is_repair,
             ))
             db.commit()
         finally:
@@ -212,6 +221,64 @@ async def _invoke_raw(prompt_text: str, variables: Dict[str, Any], call_site: st
     }
 
 
+async def _repair_call(contract, bad_value: Any, errors, call_site: str,
+                       candidate_id: Optional[int], client=None):
+    """结构不合规时发起一次修正调用，把错误回灌给模型让它重出一次。
+
+    **为什么不在本地补默认值**：本地补等于**伪造模型输出**——
+    把 `score: null` 补成 70 并记成"模型给的 70 分"，那正是上一轮修掉的
+    "兜底被伪装成模型评分"。让模型自己重出一次，出来的才是真值；
+    修不好就退回兜底，此时才是诚实的兜底。
+
+    修正调用是真实发生的请求，**必须单独埋点**，否则成本页会漏算这部分花费。
+    """
+    from src.services.llm_json import extract_llm_error
+
+    prompt_text = llm_contracts.repair_prompt(contract, bad_value, errors)
+    try:
+        msg, meta = await _invoke_raw(prompt_text, {}, call_site, candidate_id, client)
+    except budget.BudgetExceeded:
+        # 预算不够做修正：原结果仍然可用（节点层有类型防御），
+        # 不能因为"修不了"就让整条任务死在半路。
+        _write_log(call_site=call_site, model="?", base_url="",
+                   input_tokens=None, output_tokens=None, cost=0.0, latency_ms=0,
+                   status=_STATUS_BUDGET, degraded=True, prompt_text=prompt_text,
+                   candidate_id=candidate_id, error="预算不足，未发起修正调用",
+                   is_repair=True)
+        return None
+    except Exception as e:
+        _write_log(call_site=call_site, model="?", base_url="",
+                   input_tokens=None, output_tokens=None, cost=0.0, latency_ms=0,
+                   status=_STATUS_FAILED, degraded=True, prompt_text=prompt_text,
+                   candidate_id=candidate_id, error=extract_llm_error(e), is_repair=True)
+        return None
+
+    try:
+        fixed = JsonOutputParser().invoke(msg)
+    except Exception as e:
+        _write_log(call_site=call_site, model=meta["model"],
+                   model_served=meta["model_served"], base_url=meta["base_url"],
+                   input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
+                   cost=meta["cost"], latency_ms=meta["latency_ms"],
+                   status=_STATUS_FAILED, degraded=True, prompt_text=prompt_text,
+                   candidate_id=candidate_id,
+                   error=f"[JSONParseError] {str(e)[:200]}", is_repair=True)
+        return None
+
+    fix_errors = contract.validate(fixed)
+    _write_log(call_site=call_site, model=meta["model"],
+               model_served=meta["model_served"], base_url=meta["base_url"],
+               input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
+               cost=meta["cost"], latency_ms=meta["latency_ms"],
+               status=_STATUS_OK, degraded=False, prompt_text=prompt_text,
+               candidate_id=candidate_id, error=None,
+               schema_valid=not fix_errors, schema_errors="; ".join(fix_errors) or None,
+               is_repair=True)
+    _emit(call_site, meta["model"], meta["input_tokens"], meta["output_tokens"],
+          meta["cost"], meta["latency_ms"], _STATUS_OK)
+    return fixed
+
+
 async def invoke_json(prompt_text: str, variables: Dict[str, Any],
                       default: Dict[str, Any], call_site: str, *,
                       candidate_id: Optional[int] = None, client=None) -> Dict[str, Any]:
@@ -219,6 +286,9 @@ async def invoke_json(prompt_text: str, variables: Dict[str, Any],
 
     失败一律降级返回 default，并把 degraded 记进日志——
     评审时必须能区分"模型给了低分"和"模型挂了走兜底分"。
+
+    返回值还会按 `llm_contracts` 里登记的输出契约做**形状校验**：
+    首次不合规就发起一次修正调用（可关），结果落进埋点。
     """
     try:
         msg, meta = await _invoke_raw(prompt_text, variables, call_site,
@@ -260,11 +330,37 @@ async def invoke_json(prompt_text: str, variables: Dict[str, Any],
               meta["cost"], meta["latency_ms"], _STATUS_FAILED)
         return default
 
+    # ---- 输出契约校验 ----
+    # 只判形状，不判内容好坏：内容问题属于"推理质量"，要用评测集发现，
+    # 不能靠兜底掩盖（兜底 70 分落在通过区间，被当成模型评分会直接放行候选人）。
+    contract = llm_contracts.contract_for(call_site)
+    schema_valid: Optional[bool] = None
+    schema_fixed: Optional[bool] = None
+    schema_errors = []
+
+    if contract is not None:
+        schema_errors = contract.validate(result)
+        schema_valid = not schema_errors
+
+        if schema_errors and settings.LLM_SCHEMA_REPAIR_ENABLED:
+            repaired = await _repair_call(contract, result, schema_errors,
+                                          call_site, candidate_id, client)
+            if repaired is not None:
+                fix_errors = contract.validate(repaired)
+                schema_fixed = not fix_errors
+                if not fix_errors:
+                    result = repaired
+                    # 注意：schema_errors **不清空**——它记的是"首次错在哪"，
+                    # 那正是这层埋点存在的意义。清空了就只剩"曾经不合规"，
+                    # 反而看不出模型到底栽在哪个字段上。
+
     _write_log(call_site=call_site, model=meta["model"], model_served=meta["model_served"], base_url=meta["base_url"],
                input_tokens=meta["input_tokens"], output_tokens=meta["output_tokens"],
                cost=meta["cost"], latency_ms=meta["latency_ms"],
                status=_STATUS_OK, degraded=False, prompt_text=prompt_text,
-               candidate_id=candidate_id, error=None)
+               candidate_id=candidate_id, error=None,
+               schema_valid=schema_valid, schema_fixed=schema_fixed,
+               schema_errors="; ".join(schema_errors) or None)
     _emit(call_site, meta["model"], meta["input_tokens"], meta["output_tokens"],
           meta["cost"], meta["latency_ms"], _STATUS_OK)
     return result

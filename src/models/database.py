@@ -332,6 +332,18 @@ class LLMCallLog(Base):
     usage_missing = Column(Boolean, default=False)  # 供应商未返回 token 用量
     prompt_hash = Column(String(64))              # prompt 前 500 字符的 sha256
     error = Column(Text)
+    # ---- 输出契约校验结果 ----
+    # 为什么要有这三列：`invoke_json` 只保证"返回的是可解析的 JSON"，
+    # 不保证字段齐全、类型正确。模型返回 {"score": null} 时这次调用会被记成
+    # status=ok / degraded=false，节点兜底成 70 分 —— 埋点完全看不出它不合规。
+    # 注入实验证明这类违规是唯一会穿透到驱动层的故障（存活率 0.400，
+    # 而超时/5xx/坏 JSON 都是 1.000），所以必须能把它量出来。
+    schema_valid = Column(Boolean)                # 首次返回是否结构合规；无契约时为空
+    schema_fixed = Column(Boolean)                # 修正调用后是否变合规
+    schema_errors = Column(Text)                  # 不合规明细（首次校验的错误清单）
+    # 是否为"结构不合规后发起的修正调用"。修正调用是真实发生的 LLM 请求，
+    # 必须单独记一行，否则成本页会漏算这部分花费。
+    is_repair = Column(Boolean, default=False)
 
 
 class RetrievalLog(Base):
