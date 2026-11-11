@@ -108,6 +108,10 @@ export interface ReviewItem {
     degraded?: boolean;
   } | null;
   assessed_dimensions: string[];
+  // 本次评估里**用了兜底值**的维度。
+  // LLM 调用失败时后端会降级返回默认分（多数是 70 分）——它看起来像正常评分，
+  // 实际根本没评。前端必须把它显式提示出来，否则 HR 会把兜底分当成模型的判断。
+  degraded_dimensions: string[];
   scoring_version: string | null;
   // 评分口径指纹（由后端代码 + 运行时配置算出）：指纹不同即表示口径变过，
   // 分数不可直接比较；相同也不保证分数可复现（模型采样本身有随机性）

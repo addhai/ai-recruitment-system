@@ -71,6 +71,10 @@ def list_pending_reviews(skip: SkipParam = 0, limit: LimitParam = 100,
             "review_reason": results.get("review_reason"),
             "review_detail": results.get("review_detail"),
             "assessed_dimensions": results.get("assessed_dimensions") or [],
+            # 用了兜底值的维度：LLM 挂掉时后端降级返回默认分（多数 70 分），
+            # 它看起来像正常评分，实际根本没评。复核列表必须显式提示，
+            # 否则 HR 会把兜底分当成模型的判断。
+            "degraded_dimensions": results.get("degraded_dimensions") or [],
             "scoring_version": results.get("scoring_version"),
             # 口径指纹：判断这条历史评分与当前代码/配置是否可比。
             # scoring_version 是人写的字符串，改了提示词忘了改它就会误导，
