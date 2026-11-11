@@ -31,3 +31,9 @@ src/data/chroma/
 .coverage
 out*.txt
 pytest_output.txt
+
+# 评测产物：本地跑出来的报告与候选清单，不进版本库
+eval_report*.json
+chunk_report*.json
+kb_eval_report.json
+traffic_candidates.json

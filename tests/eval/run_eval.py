@@ -138,6 +138,50 @@ def _a_decision_shape(result: Dict, spec: Dict) -> tuple:
     return ok, f"decision={decision}"
 
 
+def _load_faithfulness():
+    """按文件路径加载忠实度模块。
+
+    直接 `import tests.eval.faithfulness` 在以脚本方式运行时可能不可用
+    （tests/eval 下没有 __init__.py），按路径加载最稳，两种入口都能用。
+
+    **必须先把模块注册进 sys.modules 再执行**：@dataclass 在类定义完成时
+    会回查 `sys.modules[cls.__module__]`，而动态加载出来的模块默认不在
+    sys.modules 里 → 回查拿到 None → 抛
+    `AttributeError: 'NoneType' object has no attribute '__dict__'`。
+    那个异常发生在**导入期**，于是整个忠实度断言模块根本加载不起来，
+    每条知识库用例都只报"断言执行异常"——看起来像断言不通过，
+    实际是断言压根没跑。注册进 sys.modules 是 importlib 动态加载的标准做法。
+    """
+    import importlib.util
+
+    path = Path(__file__).resolve().parent / "faithfulness.py"
+    spec = importlib.util.spec_from_file_location("kb_faithfulness", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(spec.name, None)
+        raise
+    return module
+
+
+def _a_faithful(result: Dict, spec: Dict) -> tuple:
+    """回答里的事实必须能在检索到的片段里找到出处。
+
+    判定逻辑（数字硬断言 / 名称宽松 / 自由文本只记录）都在 faithfulness.py 里，
+    这里只负责把结果转成 run_eval 的 (ok, detail)。
+    """
+    answer = result.get("answer") or ""
+    contexts = result.get("_kb_contexts") or []
+    res = _load_faithfulness().check_faithfulness(
+        answer, contexts, strict=bool(spec.get("strict")))
+    if res["ok"]:
+        return True, res["detail"]
+    tokens = [u.get("token") for u in res.get("unsupported", [])]
+    return False, f"无依据事实 {tokens}；{res['detail']}"
+
+
 ASSERTIONS: Dict[str, Callable[[Dict, Dict], tuple]] = {
     "key_present": _a_key_present,
     "education_not_empty": _a_education_not_empty,
@@ -147,13 +191,72 @@ ASSERTIONS: Dict[str, Callable[[Dict, Dict], tuple]] = {
     "missing_skills_shape": _a_missing_skills_shape,
     "no_zero_risk_for_unconstrained": _a_no_zero_risk_for_unconstrained,
     "decision_shape": _a_decision_shape,
+    "faithful": _a_faithful,
 }
 
 
 # ================================================================ 用例执行
 
+def _run_knowledge_case(case: Dict, repeat: int = 1) -> Dict[str, Any]:
+    """知识库问答用例：真实检索 + 真实 LLM，再断言忠实度。
+
+    **为什么不直接复用 `_query_sync` 的返回值**：它返回的 `sources` 里
+    `content` 被截断到 200 字，而 LLM 实际看到的是**完整 chunk**
+    （`_format_docs` 不截断）。拿截断片段做忠实度比对会凭空产生误报——
+    模型引用了 200 字之后的内容，比对素材里却没有。
+
+    所以这里自己走一遍「检索 → 拼上下文 → 调 LLM」，保证**上下文、答案、
+    比对素材三者来自同一次检索**。
+
+    成本与 L1 同性质：每次都要真实调 LLM，手动触发，不进日常 CI。
+    """
+    from src.rag import knowledge_base as kb
+
+    kb.init_knowledge_base()
+    docs = kb._retrieve_docs(case["query"], k=case.get("top_k", 4))
+    contexts = [{"title": d.metadata.get("title", ""), "content": d.page_content}
+                for d in docs]
+    context_text = kb._format_docs(docs)
+
+    runs: List[Dict[str, Any]] = []
+    failures: List[str] = []
+
+    for i in range(repeat):
+        try:
+            answer = kb._invoke_qa_with_instrumentation(context_text, case["query"])
+        except Exception as e:
+            detail = f"{type(e).__name__}: {str(e)[:200]}"
+            failures.append(f"[run {i+1}] 知识库问答失败: {detail}")
+            runs.append({"run": i + 1, "metrics": {"error": detail}, "assertions": []})
+            continue
+
+        result = {"answer": answer, "_kb_contexts": contexts}
+        check = _check_assertions(case, result)
+        metrics = dict(check["metrics"])
+        metrics.update({
+            "sources": len(contexts),
+            "context_chars": len(context_text),
+            "answer_chars": len(answer),
+            "hit_titles": [c["title"] for c in contexts],
+        })
+        runs.append({"run": i + 1, "metrics": metrics,
+                     "assertions": check["assertions"]})
+        for f in check["failures"]:
+            tag = f"[run {i+1}] {f}"
+            if tag not in failures:
+                failures.append(tag)
+
+    return {"name": case["name"], "passed": not failures,
+            "runs": runs, "failures": failures}
+
+
 def run_case(case: Dict, repeat: int = 1) -> Dict[str, Any]:
     """跑一条用例，返回 {name, passed, runs: [...], failures: [...]}"""
+    # 知识库用例（kind=knowledge）走另一条链路：真实检索 + 真实 LLM，
+    # 断言答案忠实度。招聘评分用例的逻辑不变。
+    if case.get("kind") == "knowledge":
+        return _run_knowledge_case(case, repeat)
+
     from src.services import job_parser
     from src.workflow import recruitment_graph as rg
 
@@ -302,6 +405,175 @@ def _cleanup_candidate(cid: int) -> None:
             db.commit()
 
 
+# ================================================================ 口径指纹
+
+def _provenance() -> Dict[str, Any]:
+    """记录本次评测的**口径**——决定"两次结果能不能直接比"的那几项。
+
+    这是"换模型做回归"里最容易踩的坑：新旧分数的差异，到底来自模型变好，
+    还是来自提示词/权重也一起改了？两者混在一起就无从判断。
+    所以这里把口径拆成三块分别记录：
+
+    - code_digest：决定评分的模块源码摘要（提示词、权重、门限）。
+      它变了 → 评分口径变了，与模型无关。
+    - config_digest：运行时配置摘要（模型名/base_url/temperature/timeout）。
+      **换模型时它必然变**——这是预期内的变化，不是故障。
+    - kb_chunk / embedding_model：知识库侧口径。本运行器不跑知识库问答，
+      但仍记录下来：它们变了会影响检索，而检索不进这条链路，
+      记录下来是为了让人知道"这次变的到底是什么"。
+
+    三块分别给出，才能区分"我换了模型"与"我不知怎么连提示词也改了"。
+    """
+    from src.config import settings
+    from src.rag import knowledge_base as kb
+    from src.services import llm_config
+    from src.workflow import scoring_fingerprint
+
+    cfg = llm_config.get_effective_config()
+    return {
+        "fingerprint": scoring_fingerprint.fingerprint(),
+        "code_digest": scoring_fingerprint.code_digest(scoring_fingerprint.module_sources()),
+        "config_digest": scoring_fingerprint.config_digest(cfg),
+        "model": cfg.get("model"),
+        "base_url": cfg.get("base_url"),
+        "temperature": cfg.get("temperature"),
+        "timeout_seconds": cfg.get("timeout_seconds"),
+        "config_source": cfg.get("source"),
+        "embedding_model": settings.EMBEDDING_MODEL,
+        "kb_chunk": kb.chunk_config(),
+    }
+
+
+# ================================================================ 基线对比
+
+def _case_assertion_status(case_result: Dict) -> Dict[str, bool]:
+    """把一条用例的断言状态压成 {kind: ok}。
+
+    多次 repeat 时取"全部通过"才算 ok——只要有一次不通过，这条用例就没通过。
+    """
+    out: Dict[str, bool] = {}
+    for run in case_result.get("runs", []):
+        for a in run.get("assertions", []):
+            kind = a.get("kind")
+            out[kind] = out.get(kind, True) and bool(a.get("ok"))
+    return out
+
+
+def compare_with_baseline(current: Dict, baseline: Dict,
+                          drift_threshold: float = 10.0) -> Dict[str, Any]:
+    """与基线报告对比，标出退步。
+
+    判定分两类，性质不同：
+
+    1. **断言退步（硬）**：某条硬性不变量从 PASS 变 FAIL。这一定是退步——
+       字段缺失、类型漂移、评语没引用 JD 原文、虚假 0 分——任何模型下都不该发生。
+    2. **分数漂移（软）**：同一维度的中位数相对基线移动超过阈值。
+       **不计入退出码**：大模型采样本身不可复现（实测同一份简历文化契合
+       能给出 72/72/58/58），把波动写成断言就是误报源。
+       它只用来回答"方向上变了没有"，供人判断。
+
+    口径变化单独列出。换模型时 config_digest 必然变，这是预期内的；
+    但 code_digest 也变了就说明提示词/权重被一起动了，两种变化混在一起，
+    分数的差异无法归因——这正是要显式告诉你的。
+    """
+    cur_prov = current.get("provenance") or {}
+    base_prov = baseline.get("provenance") or {}
+
+    prov_changes: List[str] = []
+    if cur_prov.get("code_digest") != base_prov.get("code_digest"):
+        prov_changes.append("评分源码口径已变（提示词/权重/门限）——与模型无关，属额外变化")
+    if cur_prov.get("config_digest") != base_prov.get("config_digest"):
+        prov_changes.append(f"运行时配置口径已变（模型 {base_prov.get('model')} → {cur_prov.get('model')}）")
+    if cur_prov.get("embedding_model") != base_prov.get("embedding_model"):
+        prov_changes.append(f"embedding 模型已变（{base_prov.get('embedding_model')} → {cur_prov.get('embedding_model')}）")
+    if cur_prov.get("kb_chunk") != base_prov.get("kb_chunk"):
+        prov_changes.append(f"知识库切分参数已变（{base_prov.get('kb_chunk')} → {cur_prov.get('kb_chunk')}）")
+
+    cur_cases = {r["name"]: r for r in current.get("results", [])}
+    base_cases = {r["name"]: r for r in baseline.get("results", [])}
+
+    regressions: List[Dict[str, Any]] = []
+    fixed: List[Dict[str, Any]] = []
+
+    for name, cur in cur_cases.items():
+        cur_status = _case_assertion_status(cur)
+        base_status = _case_assertion_status(base_cases.get(name, {}))
+        for kind, ok in cur_status.items():
+            was = base_status.get(kind)
+            if was is True and not ok:
+                regressions.append({"case": name, "kind": kind,
+                                    "detail": "基线通过，本次失败"})
+            elif was is False and ok:
+                fixed.append({"case": name, "kind": kind, "detail": "基线失败，本次通过"})
+
+    removed = [n for n in base_cases if n not in cur_cases]
+    added = [n for n in cur_cases if n not in base_cases]
+
+    # 分数漂移（软）：比较各维度中位数
+    drift: List[Dict[str, Any]] = []
+    cur_dist = (current.get("summary") or {}).get("score_distribution") or {}
+    base_dist = (baseline.get("summary") or {}).get("score_distribution") or {}
+    for key in ("skill", "experience", "education", "culture", "overall"):
+        c = cur_dist.get(key)
+        b = base_dist.get(key)
+        if not c or not b:
+            continue
+        delta = float(c["median"]) - float(b["median"])
+        if abs(delta) >= drift_threshold:
+            drift.append({"dimension": key, "baseline_median": b["median"],
+                          "current_median": c["median"], "delta": round(delta, 1)})
+
+    return {
+        "provenance_changes": prov_changes,
+        "regressions": regressions,
+        "fixed": fixed,
+        "added_cases": added,
+        "removed_cases": removed,
+        "score_drift": drift,
+        "drift_threshold": drift_threshold,
+        "comparable": not prov_changes,
+        "ok": not regressions,
+    }
+
+
+def print_baseline_diff(diff: Dict[str, Any]) -> None:
+    print("\n" + "=" * 74)
+    print("与基线对比")
+    print("=" * 74)
+
+    if diff["provenance_changes"]:
+        print("\n口径变化（决定两次结果是否可直接比较）：")
+        for c in diff["provenance_changes"]:
+            print(f"  • {c}")
+        if not diff["comparable"]:
+            print("  → 口径已变：分数差异不能直接归因到模型效果，需结合上面的变化项解读")
+    else:
+        print("\n口径未变（源码/配置/切分参数一致），分数可直接比较")
+
+    print("\n断言退步（硬判据，计入失败）：")
+    if diff["regressions"]:
+        for r in diff["regressions"]:
+            print(f"  ✗ {r['case']} / {r['kind']}: {r['detail']}")
+    else:
+        print("  无")
+
+    if diff["fixed"]:
+        print("\n修复项：")
+        for r in diff["fixed"]:
+            print(f"  ✓ {r['case']} / {r['kind']}: {r['detail']}")
+
+    print(f"\n分数漂移（软信号，阈值 ±{diff['drift_threshold']}，不计入失败）：")
+    if diff["score_drift"]:
+        for d in diff["score_drift"]:
+            print(f"  {d['dimension']:12} {d['baseline_median']} → {d['current_median']}"
+                  f"  ({d['delta']:+})")
+    else:
+        print("  无")
+
+    if diff["added_cases"] or diff["removed_cases"]:
+        print(f"\n用例集变动：新增 {diff['added_cases'] or '无'}；移除 {diff['removed_cases'] or '无'}")
+
+
 # ================================================================ 报告
 
 def _summarize(results: List[Dict], repeat: int) -> Dict[str, Any]:
@@ -370,6 +642,9 @@ def main() -> int:
     ap.add_argument("--cases", nargs="*", help="只跑指定用例名（子串匹配）")
     ap.add_argument("--repeat", type=int, default=1, help="每条用例重复次数，看数值波动")
     ap.add_argument("--out", help="报告输出路径（JSON）")
+    ap.add_argument("--baseline", help="基线报告 JSON 路径；给出后做退步对比")
+    ap.add_argument("--drift-threshold", type=float, default=10.0,
+                    help="分数中位数漂移告警阈值（软信号，不计入退出码）")
     args = ap.parse_args()
 
     if not CASES_FILE.exists():
@@ -396,13 +671,39 @@ def main() -> int:
     summary = _summarize(results, args.repeat)
     print_report(results, summary, elapsed)
 
+    # 口径：这次跑的是哪套提示词 + 哪个模型 + 哪套切分参数。
+    # 不记它就无法判断"这次和上次的分数差"该归因给谁。
+    provenance = _provenance()
+    print(f"\n口径指纹: {provenance.get('fingerprint')}  "
+          f"模型={provenance.get('model')}  "
+          f"temperature={provenance.get('temperature')}  "
+          f"切分={provenance.get('kb_chunk')}")
+
+    report = {"provenance": provenance, "summary": summary, "results": results}
+
+    diff = None
+    if args.baseline:
+        baseline_path = Path(args.baseline)
+        if not baseline_path.exists():
+            print(f"基线报告不存在: {baseline_path}")
+            return 2
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        diff = compare_with_baseline(report, baseline, args.drift_threshold)
+        print_baseline_diff(diff)
+        report["baseline_diff"] = diff
+
     if args.out:
-        Path(args.out).write_text(json.dumps(
-            {"summary": summary, "results": results}, ensure_ascii=False, indent=2),
-            encoding="utf-8")
+        Path(args.out).write_text(json.dumps(report, ensure_ascii=False, indent=2),
+                                  encoding="utf-8")
         print(f"\n报告已写入: {args.out}")
 
-    return 0 if summary["failed"] == 0 else 1
+    # 退出码：断言失败算失败；基线对比里的**断言退步**也算失败。
+    # 分数漂移不计入——大模型采样本身不可复现，把它写成门禁只会天天误报。
+    if summary["failed"] != 0:
+        return 1
+    if diff is not None and diff["regressions"]:
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

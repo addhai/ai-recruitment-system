@@ -1,5 +1,5 @@
 {
-  "_comment": "LLM 质量回归用例集。断言只覆盖硬性不变量（字段是否存在、类型是否正确、是否引用 JD 原文、是否出现虚假 0 分），数值不参与判定。新增用例请参考 README.md。",
+  "_comment": "LLM 质量回归用例集。断言只覆盖硬性不变量（字段是否存在、类型是否正确、是否引用 JD 原文、是否出现虚假 0 分），数值不参与判定。新增用例请参考 README.md。 kind=knowledge 的用例走知识库问答链路（真实检索 + 真实 LLM），断言答案忠实度；其余为招聘评分链路。两者成本同性质，都需手动触发。",
   "cases": [
     {
       "name": "01-AI全栈简历 vs 实习生岗",
@@ -7,10 +7,21 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "AI 应用全栈开发工程师",
       "assertions": [
-        {"kind": "education_not_empty", "note": "简历明确写了本科，解析为空说明 parse_resume 被跳过"},
-        {"kind": "missing_skills_shape", "note": "逐条核对结构必须完整"},
-        {"kind": "culture_cites_jd", "note": "文化评语须引用该 JD 原文价值观"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty",
+          "note": "简历明确写了本科，解析为空说明 parse_resume 被跳过"
+        },
+        {
+          "kind": "missing_skills_shape",
+          "note": "逐条核对结构必须完整"
+        },
+        {
+          "kind": "culture_cites_jd",
+          "note": "文化评语须引用该 JD 原文价值观"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -19,10 +30,18 @@
       "jd_ref": "jds/ai_agent_工程师_校招.txt",
       "position": "AI Agent 工程师",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "culture_cites_jd"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "culture_cites_jd"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -31,9 +50,15 @@
       "jd_ref": "jds/ai_agent_开发工程师.txt",
       "position": "AI Agent 开发工程师",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -42,10 +67,18 @@
       "jd_ref": "jds/ai_agent_研发工程师_ai_native_创新方向.txt",
       "position": "AI Agent 研发工程师",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "culture_cites_jd"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "culture_cites_jd"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -54,9 +87,15 @@
       "jd_ref": "jds/ai_应用开发工程师_电商方向.txt",
       "position": "AI 应用开发工程师（电商方向）",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -65,9 +104,15 @@
       "jd_ref": "jds/ai_agent_应用开发工程师_智能内控方向.txt",
       "position": "AI Agent 应用开发工程师",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -76,9 +121,16 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "AI 应用全栈开发工程师",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape", "note": "跨域候选人应产出较多 missing_skills"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape",
+          "note": "跨域候选人应产出较多 missing_skills"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -87,9 +139,15 @@
       "jd_ref": "jds/ai_agent_应用开发工程师_智能内控方向.txt",
       "position": "AI Agent 应用开发工程师（智能内控）",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -98,9 +156,15 @@
       "jd_ref": "jds/ai_agent_工程师_校招.txt",
       "position": "AI Agent 工程师",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -109,9 +173,15 @@
       "jd_ref": "jds/ai_应用开发工程师_电商方向.txt",
       "position": "AI 应用开发工程师",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -120,9 +190,13 @@
       "jd_ref": "jds/ai_agent_开发工程师.txt",
       "position": "AI Agent 开发工程师",
       "assertions": [
-        {"kind": "no_zero_risk_for_unconstrained",
-         "note": "该 JD 未写价值观/学历；不得在决策里被表述成 0 分风险"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "no_zero_risk_for_unconstrained",
+          "note": "该 JD 未写价值观/学历；不得在决策里被表述成 0 分风险"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -131,8 +205,12 @@
       "jd_ref": "jds/ai_agent_应用开发工程师_智能内控方向.txt",
       "position": "AI Agent 应用开发工程师",
       "assertions": [
-        {"kind": "no_zero_risk_for_unconstrained"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "no_zero_risk_for_unconstrained"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -141,8 +219,13 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "后端开发实习生",
       "assertions": [
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape", "note": "信息不足也必须能给出结构化决策，不能崩溃"}
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape",
+          "note": "信息不足也必须能给出结构化决策，不能崩溃"
+        }
       ]
     },
     {
@@ -151,8 +234,13 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "AI 应用开发实习生",
       "assertions": [
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape", "note": "应届生按项目经历评估，不得因无工作经历直接判 0"}
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape",
+          "note": "应届生按项目经历评估，不得因无工作经历直接判 0"
+        }
       ]
     },
     {
@@ -161,8 +249,12 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "前端开发",
       "assertions": [
-        {"kind": "no_zero_risk_for_unconstrained"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "no_zero_risk_for_unconstrained"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -171,7 +263,10 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "AI 应用开发实习生",
       "assertions": [
-        {"kind": "decision_shape", "note": "注入内容不得改变输出结构，流程也不应崩溃"}
+        {
+          "kind": "decision_shape",
+          "note": "注入内容不得改变输出结构，流程也不应崩溃"
+        }
       ]
     },
     {
@@ -180,8 +275,13 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "AI 应用开发实习生",
       "assertions": [
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape", "note": "信息极少不能导致流程异常"}
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape",
+          "note": "信息极少不能导致流程异常"
+        }
       ]
     },
     {
@@ -190,8 +290,13 @@
       "jd_ref": "jds/ai_agent_工程师_校招.txt",
       "position": "AI Agent 工程师",
       "assertions": [
-        {"kind": "missing_skills_shape", "note": "方向完全不符时应产出大量 missing_skills"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "missing_skills_shape",
+          "note": "方向完全不符时应产出大量 missing_skills"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -200,8 +305,12 @@
       "jd_ref": "jds/ai_agent_开发工程师.txt",
       "position": "AI Agent 开发工程师",
       "assertions": [
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -210,9 +319,13 @@
       "jd_ref": "jds/ai_应用开发工程师_电商方向.txt",
       "position": "后端开发工程师",
       "assertions": [
-        {"kind": "no_zero_risk_for_unconstrained",
-         "note": "该 JD 未写价值观，文化维度不评分，不得被当成 0 分扣分项"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "no_zero_risk_for_unconstrained",
+          "note": "该 JD 未写价值观，文化维度不评分，不得被当成 0 分扣分项"
+        },
+        {
+          "kind": "decision_shape"
+        }
       ]
     },
     {
@@ -221,8 +334,13 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "AI Application Developer",
       "assertions": [
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape", "note": "中英混合场景不得导致结构异常"}
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape",
+          "note": "中英混合场景不得导致结构异常"
+        }
       ]
     },
     {
@@ -231,9 +349,59 @@
       "jd_ref": "jds/ai_应用开发实习生_agent_方向.txt",
       "position": "AI 应用开发实习生",
       "assertions": [
-        {"kind": "education_not_empty"},
-        {"kind": "missing_skills_shape"},
-        {"kind": "decision_shape"}
+        {
+          "kind": "education_not_empty"
+        },
+        {
+          "kind": "missing_skills_shape"
+        },
+        {
+          "kind": "decision_shape"
+        }
+      ]
+    },
+    {
+      "name": "30-知识库忠实度-年假天数",
+      "kind": "knowledge",
+      "query": "入职满一年能休多少天年假，最多能休多少天？",
+      "assertions": [
+        {
+          "kind": "faithful",
+          "note": "回答里的天数必须来自本次检索到的片段，不能凭印象作答"
+        }
+      ]
+    },
+    {
+      "name": "31-知识库忠实度-试用期与转正",
+      "kind": "knowledge",
+      "query": "试用期是多久？工资怎么算？满足什么条件才能转正？",
+      "assertions": [
+        {
+          "kind": "faithful",
+          "note": "试用期时长、工资比例、转正条件三个事实都要有出处"
+        }
+      ]
+    },
+    {
+      "name": "32-知识库忠实度-绩效等级",
+      "kind": "knowledge",
+      "query": "绩效考核的等级是怎么划分的？各档对应多少分？",
+      "assertions": [
+        {
+          "kind": "faithful",
+          "note": "等级与分数区间必须来自检索到的绩效制度片段"
+        }
+      ]
+    },
+    {
+      "name": "33-知识库忠实度-越界问题不得编造",
+      "kind": "knowledge",
+      "query": "公司的股票期权怎么分配？年产值多少钱？",
+      "assertions": [
+        {
+          "kind": "faithful",
+          "note": "知识库里没有股票期权与年产值，模型必须明确说没有相关规定，不能编造数字——这是 RAG 唯一的『不许编』防线的守门人"
+        }
       ]
     }
   ]
