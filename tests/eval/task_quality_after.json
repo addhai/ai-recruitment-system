@@ -1,0 +1,1044 @@
+{
+  "meta": {
+    "n": 8,
+    "mode": "real_llm",
+    "repair_enabled": true,
+    "judge_enabled": true,
+    "note": "隔离临时库，不受预算墙拦截；花费单独统计"
+  },
+  "overall": {
+    "n": 8,
+    "schema_checked_calls": 60,
+    "schema_valid_first": 56,
+    "schema_first_valid_rate": 0.9333,
+    "schema_repaired_calls": 4,
+    "schema_repaired_ok": 4,
+    "schema_repair_success_rate": 1.0,
+    "schema_error_fields": {
+      "skills": 4,
+      "language": 3
+    },
+    "calls_total": 64,
+    "calls_first": 60,
+    "calls_repair": 4,
+    "avg_calls_first": 7.5,
+    "avg_calls_total": 8.0,
+    "total_cost": 0.6992,
+    "avg_cost": 0.0874,
+    "latency_p50_ms": 62485,
+    "latency_p90_ms": 145992,
+    "latency_max_ms": 145992,
+    "decision_exact_n": 8,
+    "decision_exact_rate": 0.875,
+    "decision_aligned_rate": 1.0,
+    "reason_consistent_rate": 1.0,
+    "reason_issue_samples": [],
+    "judge_n": 8,
+    "judge_decision_consistent_rate": 1.0,
+    "judge_reason_consistent_rate": 1.0,
+    "judge_hallucination_rate": 0.0,
+    "judge_quality_avg": 80.62,
+    "judge_quality_min": 70,
+    "judge_issue_samples": [
+      "决策理由为空，无法进一步审计措辞与分数的细节一致性；不推荐结论仅由“问卷测评不达标”支撑，且未提供达标阈值说明。",
+      "最终决策未提供具体决策理由，无法进一步核验推理依据；风险项为空，未列明技能缺口等关键风险。",
+      "最终决策理由为空，无法验证决策解释质量与各维度评分的对应关系",
+      "风险项为空，缺少对经验不足、问卷测评为0等风险的结构化说明",
+      "问卷测评为0但未提供来源或解释，影响评分可审计性",
+      "决策理由为空，缺少对不推荐结论的明确解释；但低分与不推荐不矛盾，且未发现理由与评分矛盾或幻觉事实。",
+      "决策理由为空，缺少对低分维度及流程淘汰原因的具体说明，可解释性不足。",
+      "风险项为空，未说明经验、教育、问卷测评等低分项带来的潜在风险，审计追踪信息不足。"
+    ],
+    "judge_hallucination_samples": [],
+    "dim_judge_tasks": 8,
+    "dim_samples": 36,
+    "dim_reason_consistent_rate": 1.0,
+    "dim_hallucination_rate": 0.25,
+    "dim_quality_avg": 77.5,
+    "dim_quality_min": 60,
+    "dim_inconsistent_samples": [],
+    "dim_hallucination_samples": [
+      "文化契合理由引入“长期稳定任职”并因其无法确认作为评分考虑，但岗位要求未包含该价值观或任职稳定性要求，简历中也无相关事实。",
+      "经验匹配：理由称简历未明确体现 Python/FastAPI，但简历原文技术栈明确包含“Python/FastAPI/MySQL/Redis/Kubernetes”。",
+      "经验匹配：理由称未给出重构成果、性能/效率等量化证据，但简历原文写明“把人工简历筛选流程从 3 天缩短到 4 小时”。"
+    ],
+    "dim_issue_samples": [
+      "经验匹配理由中“简历未明确体现FastAPI、PostgreSQL等技能”与简历原文“熟练使用 Python/FastAPI/PostgreSQL/Redis”不符；这是事实表述错误，但未造成该维度分数与理由的明显矛盾。",
+      "问卷测评理由以“第5题Kubernetes可运维细节不足”作为弱项依据不够准确：Q5题目未要求Kubernetes，Kubernetes主要出现在Q3及岗位偏好技能中；该表述不算额外事实幻觉，但评价口径有偏差。",
+      "问卷测评维度理由存在题目对应错误：将“PostgreSQL建模与优化”归为第3题，实际对应第2题；且第2题作答已涉及核心表、主外键、索引、JSONB/GIN、事务与并发等，因此“完全未回答PostgreSQL建模与优化要求”的表述不准确。",
+      "问卷测评理由称“整体答案存在明显题号错位”缺乏充分依据：Q1-Q5与A1-A5大体对应；该问题属于理由准确性/质量问题，但未构成评分措辞与分数的直接矛盾，也未引入简历或岗位要求之外的新事实。",
+      "经验匹配理由中称简历“未明确写出 Python”，但简历原文明确写有“最近一年自学 Python，写过一些脚本与数据处理工具”，该表述与原文不完全一致；不过这不属于分数自洽矛盾，也未引入原文外的新事实。",
+      "文化契合维度存在岗位未要求的“长期稳定任职”考量，建议删除或不计入评分。",
+      "教育匹配中“专业相关性无法确认”被纳入理由，但岗位学历要求未明确专业或专业相关性要求，建议仅按本科硬门槛判断。",
+      "经验匹配理由对简历事实判断有误：Python/FastAPI 已在简历中明确体现，且已有“3天缩短到4小时”的量化成果；PostgreSQL、AI评估链路、RAG检索未体现是成立的。"
+    ]
+  },
+  "records": [
+    {
+      "index": 0,
+      "profile": "强匹配-后端",
+      "level": "strong",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 138651,
+      "human_resumes": 4,
+      "human_inputs": [
+        {
+          "type": "await_questionnaire",
+          "questions": [
+            {
+              "id": "1",
+              "question": "在招聘系统中，需要基于 FastAPI 提供 AI 评估任务接口：创建评估任务、查询进度、获取结果。请说明你会如何用 Python 异步机制、依赖注入、任务队列或后台任务、超时与重试、幂等键和结果一致性来设计该接口，并指出哪些逻辑必须避免阻"
+            },
+            {
+              "id": "2",
+              "question": "针对招聘系统中的候选人、职位、评估任务、评估结果和 RAG 检索文档，请给出 PostgreSQL 核心表设计及关键索引，并说明：状态并发更新如何避免覆盖、JSONB 字段何时使用、大列表如何分页、慢查询如何定位与优化。"
+            },
+            {
+              "id": "3",
+              "question": "请设计一条端到端的 AI 评估链路：简历解析→技能匹配→RAG 检索→LLM 评分→结果汇总。说明 FastAPI 服务、Redis、PostgreSQL 和 Kubernetes 在其中的职责，以及如何实现可观测、重试、降级、缓存、幂等和"
+            },
+            {
+              "id": "4",
+              "question": "假设招聘系统日均百万级请求，AI 评估任务高峰期出现 FastAPI 接口 P99 升高、PostgreSQL 连接池耗尽、Redis 队列积压。请给出你的排查路径、应急措施和长期优化方案，并说明如何验证优化效果。"
+            },
+            {
+              "id": "5",
+              "question": "你需要与算法、产品、前端共同交付招聘系统与 AI 评估链路。请说明如何定义接口契约和评估口径、如何设计灰度发布与回滚方案，以及在评估结果不一致或需求变更时如何推进跨团队问题闭环。"
+            }
+          ],
+          "responses": {
+            "1": "以我主导的招聘系统/AI评估链路为例：FastAPI 用 async 路由和 Depends 注入鉴权、DB/Redis、幂等键；创建任务先写 PostgreSQL（idempotency_key 唯一）再投递 Redis 队列/Stream，返回 202；查询读任务表与 Redis 进度。轻量后台任务用 BackgroundTasks，AI评估用 Celery/Arq 独立 worker，配置超",
+            "2": "核心表：candidates(id,contact,resume_json,created_at)；jobs(id,title,jd,status)；evaluations(id,candidate_id,job_id,status,idempotency_key,version,created_at)；evaluation_results(evaluation_id PK,score,detai",
+            "3": "链路：FastAPI 负责鉴权、幂等、创建任务、查询进度/结果；Redis 承载队列、进度缓存、限流；PostgreSQL 存任务、结果、文档元数据和审计轨迹；K8s 部署 API/worker 并做 HPA、探针、配置密钥。worker 依次执行解析→匹配→RAG→LLM评分→汇总，每步带 trace_id、结构化日志、指标和耗时。重试用队列确认+退避+上限，消费按幂等键去重；LLM/检索失败可",
+            "4": "排查：看端点P99/错误率、FastAPI event loop lag、PG活跃连接/等待/慢查询、Redis队列深度与消费延迟、worker CPU与重试；用trace定位阻塞点。应急：限流排队、降级非核心、临时扩worker/只读副本、缓存热点、控制重试防雪崩。长期：异步客户端与PgBouncer/池容量匹配，慢查索引和keyset分页，队列分片/背压，worker并发与超时调优，容量压测。",
+            "5": "我带队做招聘系统跨部门交付时，先用 OpenAPI/Pydantic 固化接口契约，提供 mock 与契约测试；与算法、产品确认评估口径：样本、标签、指标、阈值、人工复核和验收标准。灰度用功能开关按租户/职位/流量分批放量，影子跑新旧结果，监控准确率、时延、成本。回滚依赖版本化模型/prompt/配置、兼容迁移和开关熔断。结果不一致时用 trace_id 拉齐输入、版本、中间产物，判定是数据、算法"
+          }
+        },
+        {
+          "type": "await_interview",
+          "round": 1,
+          "score": 88
+        },
+        {
+          "type": "await_interview",
+          "round": 2,
+          "score": 85
+        },
+        {
+          "type": "await_interview",
+          "round": 3,
+          "score": 90
+        }
+      ],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "第1轮面试",
+        "第2轮面试",
+        "第3轮面试",
+        "经验匹配",
+        "综合评审",
+        "问卷测评"
+      ],
+      "evaluated_count": 9,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-dbd0e72bd9cb43cb8461114e6d0b9d31",
+      "calls_total": 13,
+      "calls_first": 12,
+      "calls_repair": 1,
+      "cost": 0.17344,
+      "llm_latency_sum_ms": 130137,
+      "schema_checked": 12,
+      "schema_valid_first": 11,
+      "schema_repaired": 1,
+      "schema_repaired_ok": 1,
+      "schema_error_fields": {
+        "skills": 1
+      },
+      "overall_score": 85,
+      "final_decision": "推荐录用",
+      "dim_scores": {
+        "skill": 78,
+        "experience": 95,
+        "education": 95,
+        "culture": 76,
+        "questionnaire": 77,
+        "overall": 85
+      },
+      "reasons": [
+        "系统综合分为85，规则档位建议为推荐录用；未发现核心维度低于50或面试反馈差等明确硬伤，故决策档位保持一致。",
+        "经验匹配95、教育匹配95，面试均分87.7且各轮为88/85/90，专业背景和面试表现对录用形成主要支撑。",
+        "技能匹配78、文化契合76、问卷测评77虽相对不高，但均未触发下调条件，不构成硬伤或合规风险。 "
+      ],
+      "decision_check": {
+        "expected": "推荐录用",
+        "model": "推荐录用",
+        "exact": true,
+        "aligned": true,
+        "level_delta": 0
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "教育匹配",
+          "score": 95,
+          "reason": "简历明确提供学历为本科、专业为计算机科学与技术；岗位要求本科及以上学历，学历达标，且计算机科学与技术专业与后端开发、AI评估链路等岗位职责高度对口。简历未提供院校和时间，但不影响对学历层次与专业匹配度的判断。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 95,
+          "reason": "候选人具有6年Python后端开发经历，超过岗位3年以上要求，也达到5年以上偏好。简历明确写出“主导招聘系统与AI评估链路建设”，与岗位职责“招聘系统后端开发与维护”“AI评估链路建设”高度对应；同时有“日均百万级请求的服务设计与性能优化”“接口P99从800ms降低至120ms”“带领5人小组完成跨部门交付”等明确量化成果和主导经验，符合90-100分锚点。简历未明确体现FastAPI、PostgreSQL等技能，但经验与职责匹配度、项目主导性和成果量化程度均很强。"
+        },
+        {
+          "dimension": "技能匹配",
+          "score": 78,
+          "reason": "Python有6年后端经历佐证，但FastAPI、PostgreSQL仅出现在技能清单，工作经历与项目中未体现实际使用证据，按锚点降档。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 76,
+          "reason": "跨团队协作有1项明确事实（带领5人小组完成跨部门交付），但缺少项目背景、协作对象和量化细节。；结果导向有1项明确量化结果（P99从800ms降至120ms）；“主导招聘系统与AI评估链路建设”仅体现主导职责，未提供交付或量化成果，不能单独作为强结果证据。；未达到85分锚点：简历中少于3项以上可明确归因于本岗位价值观的独立事实证据。；简历未提供长期稳定任职（公司、时间缺失）、开源或技术分享、客户对接或乙方经历、持续学习痕迹等辅助文化证据。"
+        },
+        {
+          "dimension": "问卷测评",
+          "score": 77,
+          "reason": "总体达到切题水平，最强为第1题，FastAPI高并发设计要点和异步阻塞边界较完整；最弱为第5题，架构拆分与Kubernetes可运维细节不足。多数答案以要点罗列为主，缺少参数、失败场景、具体实现与验证数据，建议补充真实项目细节和取舍依据。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "inconsistent_dimensions": [],
+        "quality_score": 80,
+        "issues": [
+          "经验匹配理由中“简历未明确体现FastAPI、PostgreSQL等技能”与简历原文“熟练使用 Python/FastAPI/PostgreSQL/Redis”不符；这是事实表述错误，但未造成该维度分数与理由的明显矛盾。",
+          "问卷测评理由以“第5题Kubernetes可运维细节不足”作为弱项依据不够准确：Q5题目未要求Kubernetes，Kubernetes主要出现在Q3及岗位偏好技能中；该表述不算额外事实幻觉，但评价口径有偏差。"
+        ]
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 90,
+        "issues": []
+      }
+    },
+    {
+      "index": 1,
+      "profile": "中匹配-缺技术栈",
+      "level": "medium",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 63143,
+      "human_resumes": 1,
+      "human_inputs": [
+        {
+          "type": "await_questionnaire",
+          "questions": [
+            {
+              "id": "1",
+              "question": "你过去主要使用Django和MySQL。请结合招聘系统后端场景，说明如果要用FastAPI重建或新增一组职位发布、候选人投递接口，你会如何设计路由分层、Pydantic请求响应模型、依赖注入、异常处理、异步I/O和OpenAPI文档？同时请"
+            },
+            {
+              "id": "2",
+              "question": "岗位要求熟悉PostgreSQL，而你的简历中主要体现MySQL经验。请设计招聘系统中的核心数据表，例如职位、候选人、投递记录、AI评估记录，并说明主键、外键、索引、事务边界和并发控制策略。若评估结果需要保存结构化字段和可变扩展信息，你会如"
+            },
+            {
+              "id": "3",
+              "question": "请设计一条AI评估链路：候选人简历上传后，经过解析、RAG检索、模型评估、结果落库并可供招聘人员查看。请说明链路中的同步与异步边界、消息队列、Redis缓存、任务重试、幂等、失败补偿、评估结果可追溯性和权限控制。你会如何降低模型幻觉或评估偏"
+            },
+            {
+              "id": "4",
+              "question": "招聘系统在投递高峰期可能出现接口变慢、AI评估任务堆积和数据库压力升高。请给出一个端到端的问题排查与架构优化方案，覆盖FastAPI服务限流与降级、数据库连接池与慢查询、Redis缓存、任务队列削峰、Kubernetes部署下的扩缩容和监控"
+            },
+            {
+              "id": "5",
+              "question": "你的简历显示有Django、MySQL、消息队列和接口开发经验，但缺少FastAPI、PostgreSQL、RAG检索和大规模系统设计经验。请说明你入职后前3个月如何补齐这些技术差距，并给出一个与跨团队协作相关的落地计划：如何与算法、产品、"
+            }
+          ],
+          "responses": {
+            "1": "我会按职位/投递分router，service编排、repository访问数据；Pydantic拆分Create/Update/Out并配示例；用Depends注入会话、当前用户和服务；统一异常处理器返回标准错误；DB/HTTP走异步驱动并设超时；自动生成并补充OpenAPI描述。复用Django业务规则、鉴权思路、接口测试和消息队列；重点验证ORM/迁移、事务边界、认证兼容、异步驱动和SQL差",
+            "2": "核心表：job、candidate、application、ai_eval。均id主键；application外键job_id/candidate_id并唯一约束，ai_eval外键application_id；建(job_id,status)、(application_id)索引。结构化与扩展信息用JSONB，建GIN索引；全文检索用tsvector；大表按时间分区。投递用唯一约束+短事务，评估",
+            "3": "上传接口同步校验文件与权限，保存元数据后发MQ；解析、RAG、模型评估异步执行，结果落库并更新Redis缓存/进度供查看。任务以application_id+版本为幂等键，失败指数退避，超限进死信并定时补偿扫描。记录trace、输入摘要、检索片段、模型/提示版本、原始输出和人工复核结论，按RBAC控制查看。降幻觉用证据引用、规则校验、置信度和人工复核；展示评分维度与证据片段，结论可解释。",
+            "4": "先看P95/P99、错误率、慢SQL、连接数、队列积压和AI耗时定位瓶颈。FastAPI层限流、超时、熔断，非核心接口降级；DB连接池调优并优化慢查询索引；Redis缓存热点职位和评估状态；MQ削峰并水平扩容worker；K8s用HPA按CPU和队列长度扩容，接Prometheus/Grafana告警。健康指标：接口P95/错误率、DB连接与慢查询、缓存命中率、队列积压/延迟、评估成功率与耗时、资",
+            "5": "前3个月：第1月用FastAPI重写小接口并补PostgreSQL事务/索引；第2月实践消息队列异步任务和RAG最小链路；第3月参与AI评估链路交付并复盘。协作上与算法定输入输出和评估指标，产品定场景验收，前端定接口状态，运维定部署监控；按接口、异步链路、评估质量、可观测性拆里程碑；维护隐私、模型偏差、性能风险清单；用验收用例、SLA、缺陷率和人工复核一致率衡量。结合我做过的接口与报表模块，先小范"
+          }
+        }
+      ],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配",
+        "问卷测评"
+      ],
+      "evaluated_count": 5,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-6bdcf6a8e3e54ed79c5bbcaf3863b164",
+      "calls_total": 8,
+      "calls_first": 8,
+      "calls_repair": 0,
+      "cost": 0.07719,
+      "llm_latency_sum_ms": 54801,
+      "schema_checked": 8,
+      "schema_valid_first": 8,
+      "schema_repaired": 0,
+      "schema_repaired_ok": 0,
+      "schema_error_fields": {},
+      "overall_score": 62,
+      "final_decision": "不推荐（问卷测评不达标）",
+      "dim_scores": {
+        "skill": 50,
+        "experience": 67,
+        "education": 92,
+        "culture": 60,
+        "questionnaire": 56,
+        "overall": 62
+      },
+      "reasons": [],
+      "decision_check": {
+        "expected": "不推荐",
+        "model": "不推荐",
+        "exact": true,
+        "aligned": true,
+        "level_delta": 0
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "教育匹配",
+          "score": 92,
+          "reason": "候选人明确提供学历为本科、专业为软件工程。岗位要求本科及以上学历，学历层次达标；软件工程专业与后端开发、AI评估链路建设等技术职责高度对口。简历未提供院校信息，但不影响对学历层次和专业匹配度的判断。"
+        },
+        {
+          "dimension": "技能匹配",
+          "score": 50,
+          "reason": "仅Python命中且有Django后端经历佐证，FastAPI和PostgreSQL两项硬性技能均未出现，硬性技能命中不足且多项缺失。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 67,
+          "reason": "候选人具备4年Python开发经验，满足岗位“3年以上”年限要求；经历中有Django后端、定时任务、接口与报表模块交付，说明具备后端开发和维护基础。但简历未明确体现招聘系统、AI评估链路、RAG检索、FastAPI、PostgreSQL、Redis等岗位关键职责或技术栈，仅能判断为通用Python后端相关；且项目成果描述较空泛，无性能、效率、准确率或成本等量化证据。因此年限达标但职责相关度一般、关键能力证据不足。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 60,
+          "reason": "未发现跨部门/跨团队协作的明确事实，如跨团队项目、协作方角色、客户对接或乙方经历等，“跨团队协作”价值观无有效证据。；“结果导向”仅有间接证据：参与交付两个内部系统并负责模块，但简历未说明主导责任、交付结果或量化成效，不能支撑更强的结果导向判断。；简历未提供开源/技术分享、持续学习痕迹等补充文化证据；整体文化契合证据不足。"
+        },
+        {
+          "dimension": "问卷测评",
+          "score": 56,
+          "reason": "整体答案存在明显题号错位，仅第1题相对切题，具备基础FastAPI架构认知；最强为第1题的分层与迁移思路，最弱为第3题，完全未回答PostgreSQL建模与优化要求。FastAPI、AI评估链路、PostgreSQL及线上治理深度均不足，未达到岗位核心要求。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "inconsistent_dimensions": [],
+        "quality_score": 80,
+        "issues": [
+          "问卷测评维度理由存在题目对应错误：将“PostgreSQL建模与优化”归为第3题，实际对应第2题；且第2题作答已涉及核心表、主外键、索引、JSONB/GIN、事务与并发等，因此“完全未回答PostgreSQL建模与优化要求”的表述不准确。",
+          "问卷测评理由称“整体答案存在明显题号错位”缺乏充分依据：Q1-Q5与A1-A5大体对应；该问题属于理由准确性/质量问题，但未构成评分措辞与分数的直接矛盾，也未引入简历或岗位要求之外的新事实。"
+        ]
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 80,
+        "issues": [
+          "决策理由为空，无法进一步审计措辞与分数的细节一致性；不推荐结论仅由“问卷测评不达标”支撑，且未提供达标阈值说明。"
+        ]
+      }
+    },
+    {
+      "index": 2,
+      "profile": "弱匹配-跨语言",
+      "level": "weak",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 24243,
+      "human_resumes": 0,
+      "human_inputs": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-6a1bfa1db6834d5ab27757a318a10b75",
+      "calls_total": 6,
+      "calls_first": 5,
+      "calls_repair": 1,
+      "cost": 0.05818,
+      "llm_latency_sum_ms": 39352,
+      "schema_checked": 5,
+      "schema_valid_first": 4,
+      "schema_repaired": 1,
+      "schema_repaired_ok": 1,
+      "schema_error_fields": {
+        "skills": 1,
+        "language": 1
+      },
+      "overall_score": 60,
+      "final_decision": "不推荐（流程淘汰(evaluate_dimensions)）",
+      "dim_scores": {
+        "skill": 50,
+        "experience": 60,
+        "education": 92,
+        "culture": 45,
+        "questionnaire": 0,
+        "overall": 60
+      },
+      "reasons": [],
+      "decision_check": {
+        "expected": "不推荐",
+        "model": "不推荐",
+        "exact": true,
+        "aligned": true,
+        "level_delta": 0
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "教育匹配",
+          "score": 92,
+          "reason": "候选人教育背景为本科，计算机专业；岗位要求本科及以上学历，且未设置学历加分项。计算机专业与后端开发、AI评估链路等岗位职责高度对口。院校信息未提供，但学历层次与专业事实明确，符合“达到岗位学历要求且专业高度对口”的评分区间。"
+        },
+        {
+          "dimension": "技能匹配",
+          "score": 50,
+          "reason": "FastAPI和PostgreSQL均明确无项目经历，硬性技能仅命中1/3。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 60,
+          "reason": "候选人具有3年Java后端开发经验，达到岗位“3年以上”的年限要求；但岗位职责聚焦招聘系统后端开发与维护、AI评估链路建设，技术栈要求Python、FastAPI、PostgreSQL、Redis及招聘系统/RAG领域知识。简历仅体现“Java后端开发”和“电商订单系统”，未明确写出招聘系统、AI评估链路、Python/FastAPI/PostgreSQL、RAG检索、跨团队协作或可量化成果。其经验与通用后端开发有一定相关性，但与岗位关键技术栈和AI/招聘业务职责匹配度一般，且项目成果描述空泛。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 45,
+          "reason": "跨团队协作无证据：简历未提供跨部门/跨团队项目、协作角色、对接方、客户或乙方经历、开源/技术分享等客观事实。；结果导向无明确证据：电商订单系统与Python脚本仅列名称或工具，未说明候选人职责、交付范围、结果指标、问题解决效果或业务影响。；3年经验和自学Python可视为稳定性/学习痕迹，但不直接对应JD明确列出的“跨团队协作、结果导向”两项价值观，不能据此加分。；FastAPI、PostgreSQL标注无项目经历，无法作为技术应用或交付成果证据。；综合无岗位价值观的明确事实证据，按评分锚点落入40-54信息不足默认档。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "inconsistent_dimensions": [],
+        "quality_score": 80,
+        "issues": [
+          "经验匹配理由中称简历“未明确写出 Python”，但简历原文明确写有“最近一年自学 Python，写过一些脚本与数据处理工具”，该表述与原文不完全一致；不过这不属于分数自洽矛盾，也未引入原文外的新事实。"
+        ]
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 70,
+        "issues": [
+          "最终决策未提供具体决策理由，无法进一步核验推理依据；风险项为空，未列明技能缺口等关键风险。"
+        ]
+      }
+    },
+    {
+      "index": 3,
+      "profile": "应届生-项目型",
+      "level": "medium",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 13824,
+      "human_resumes": 0,
+      "human_inputs": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-6f7fbb31756f40feaae6f8698e628ec5",
+      "calls_total": 5,
+      "calls_first": 5,
+      "calls_repair": 0,
+      "cost": 0.03962,
+      "llm_latency_sum_ms": 26446,
+      "schema_checked": 5,
+      "schema_valid_first": 5,
+      "schema_repaired": 0,
+      "schema_repaired_ok": 0,
+      "schema_error_fields": {},
+      "overall_score": 61,
+      "final_decision": "不推荐（流程淘汰(evaluate_dimensions)）",
+      "dim_scores": {
+        "skill": 65,
+        "experience": 40,
+        "education": 95,
+        "culture": 45,
+        "questionnaire": 0,
+        "overall": 61
+      },
+      "reasons": [],
+      "decision_check": {
+        "expected": "不推荐",
+        "model": "不推荐",
+        "exact": true,
+        "aligned": true,
+        "level_delta": 0
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "教育匹配",
+          "score": 95,
+          "reason": "候选人学历为本科，专业为计算机科学与技术，状态为应届生。岗位要求本科及以上学历，候选人学历层次达标；计算机科学与技术专业与招聘系统后端开发、AI评估链路建设等岗位职责高度对口。"
+        },
+        {
+          "dimension": "技能匹配",
+          "score": 65,
+          "reason": "Python 未在简历中明确出现，且 FastAPI/PostgreSQL 仅有课程作业佐证，硬性技能未全部命中。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 40,
+          "reason": "简历仅列出两个月实习，备注明确“无正式工作经验”；工作内容为数据清洗脚本和接口联调，与招聘系统后端开发、AI评估链路建设仅部分沾边，未体现3年以上正式后端或AI链路经验，也无量化成果。按岗位3年以上要求，正式相关年限明显不足，职责相关度和成果证据均较弱。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 45,
+          "reason": "“跨团队协作”无明确证据：简历未出现跨部门/团队协作项目、上下游协作角色、客户对接或开源/技术分享等事实。；“结果导向”无明确证据：实习和课程项目均未说明主导交付、责任成果、可量化结果或按期达成情况。；无正式工作经验，且实习仅两个月；缺少长期稳定任职、持续学习痕迹等可作为价值观补充的客观事实，属于信息不足默认档。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "inconsistent_dimensions": [],
+        "quality_score": 80,
+        "issues": []
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 75,
+        "issues": [
+          "最终决策理由为空，无法验证决策解释质量与各维度评分的对应关系",
+          "风险项为空，缺少对经验不足、问卷测评为0等风险的结构化说明",
+          "问卷测评为0但未提供来源或解释，影响评分可审计性"
+        ]
+      }
+    },
+    {
+      "index": 4,
+      "profile": "资深-跨行业",
+      "level": "medium",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 145992,
+      "human_resumes": 4,
+      "human_inputs": [
+        {
+          "type": "await_questionnaire",
+          "questions": [
+            {
+              "id": "1",
+              "question": "候选人简历中 Python 主要用于近两年的风控脚本，但岗位要求熟练使用 Python 和 FastAPI。请设计招聘系统中的一个 FastAPI 后端模块（如职位发布或候选人投递），说明路由分层、Pydantic 模型、依赖注入、异步 I"
+            },
+            {
+              "id": "2",
+              "question": "请针对招聘系统设计 PostgreSQL 核心数据模型，至少包括候选人、职位、投递、AI 评估结果等表，说明主键外键、索引设计、事务边界、并发更新控制、JSONB 字段使用场景、分页查询方案和数据库迁移策略。若一条评估结果查询接口出现慢查询"
+            },
+            {
+              "id": "3",
+              "question": "请设计一条完整的 AI 评估链路：从简历上传进入 FastAPI 接口，到异步任务处理、RAG 检索、AI 评估打分、PostgreSQL 结果存储和状态回写。请说明任务队列、Redis 缓存或状态管理、重试与幂等、失败补偿、超时控制、可观"
+            },
+            {
+              "id": "4",
+              "question": "该岗位既要负责招聘系统后端开发与维护，也要建设 AI 评估链路。候选人过往以金融核心交易系统为主，缺少互联网业务和微服务经验。请给出招聘系统的模块化或微服务拆分方案，说明服务边界、通信方式、数据一致性、Redis 的使用场景、Kuberne"
+            },
+            {
+              "id": "5",
+              "question": "线上出现 FastAPI 接口 P99 升高、PostgreSQL 慢查询增多、Redis 命中率下降且 AI 评估任务积压。请给出排查顺序、关键监控指标、可能根因、短期止损措施和长期优化方案；如果问题涉及算法、运维、业务等多团队协作，请说"
+            }
+          ],
+          "responses": {
+            "1": "FastAPI我会按API→service→repo分层；Pydantic定义职位/投递请求响应，Depends做鉴权、DB和配置注入；I/O用async+连接池；统一异常、结构化日志、pytest+TestClient。结合Java核心交易系统经验，迁移风险是异步误用、事务边界和生态不熟，我会以小模块灰度、压测、代码评审和回退预案控制。",
+            "2": "我会建candidate、job、application、ai_evaluation表；主外键关联，application唯一(candidate_id,job_id)，状态/时间字段建索引；事务以投递和评估状态更新为边界；乐观锁version控并发；简历解析/评分明细用JSONB；分页用游标(created_at,id)。慢查询先EXPLAIN ANALYZE看计划，再补/改复合索引、减少回表、",
+            "3": "我会让FastAPI上传后落库并返回受理号，状态queued；Celery/RQ异步：解析→RAG检索→AI评分→PostgreSQL写结果→回写状态。Redis存任务状态/幂等键和短期缓存；失败按指数退避重试，超时与补偿扫描；日志带trace_id，埋点队列长度/耗时/失败率。与算法约JSON契约、输入版本、超时、错误码、SLA（如P95返回和成功率）并联合验收。",
+            "4": "我无互联网微服务经验，建议先模块化单体：job、application、evaluation、notification按包和表隔离，API内部调用；评估链路独立worker。服务间异步事件+Outbox保证最终一致；Redis用于会话、限流、热点缓存和任务状态。K8s做健康检查、资源限制、HPA和滚动发布。仅在高并发/独立扩缩容处拆服务，避免过度拆分增加运维和排障成本。",
+            "5": "我会先看监控：接口P99、DB慢日志/锁等待、Redis命中/内存淘汰、队列积压和AI耗时；再按发布时间、SQL、缓存、下游链路排查。短期限流降级、扩worker、清大key、补索引/杀坏查询、隔离失败任务；长期做索引治理、缓存分层、容量与超时治理。跨团队（算法/运维/业务）用统一trace和看板对齐，按P99恢复、慢查询下降、命中率回升、积压清零、成功率达标验收。"
+          }
+        },
+        {
+          "type": "await_interview",
+          "round": 1,
+          "score": 70
+        },
+        {
+          "type": "await_interview",
+          "round": 2,
+          "score": 71
+        },
+        {
+          "type": "await_interview",
+          "round": 3,
+          "score": 72
+        }
+      ],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "第1轮面试",
+        "第2轮面试",
+        "第3轮面试",
+        "经验匹配",
+        "综合评审",
+        "问卷测评"
+      ],
+      "evaluated_count": 9,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-53897bbbe70c42bc8ce3c85339586338",
+      "calls_total": 13,
+      "calls_first": 12,
+      "calls_repair": 1,
+      "cost": 0.19993,
+      "llm_latency_sum_ms": 143360,
+      "schema_checked": 12,
+      "schema_valid_first": 11,
+      "schema_repaired": 1,
+      "schema_repaired_ok": 1,
+      "schema_error_fields": {
+        "skills": 1,
+        "language": 1
+      },
+      "overall_score": 64,
+      "final_decision": "不推荐（综合评审不推荐）",
+      "dim_scores": {
+        "skill": 45,
+        "experience": 64,
+        "education": 65,
+        "culture": 60,
+        "questionnaire": 79,
+        "overall": 64
+      },
+      "reasons": [
+        "系统综合分为64，规则档位建议为不推荐，决策按规则保持一致。",
+        "技能匹配45分，低于50分，是明确硬伤；经验匹配64、教育匹配65、文化契合60均偏中等，未形成补充优势。",
+        "面试均分71.0（各轮70、71、72）表现平稳但无突出亮点，问卷测评79分相对较好，但不足以抵消技能匹配短板。"
+      ],
+      "decision_check": {
+        "expected": "不推荐",
+        "model": "不推荐",
+        "exact": true,
+        "aligned": true,
+        "level_delta": 0
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "技能匹配",
+          "score": 45,
+          "reason": "硬性技能仅命中Python且有风控脚本佐证，FastAPI与PostgreSQL均未具备，仅满足1/3要求。"
+        },
+        {
+          "dimension": "教育匹配",
+          "score": 65,
+          "reason": "简历明确提供学历为本科，专业为金融工程；岗位要求本科及以上学历，学历层次达标。但金融工程专业与招聘系统后端开发、AI评估链路建设等岗位职责不直接相关，简历也未提供计算机相关辅修、认证或第二专业信息，因此属于学历达标但专业不相关。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 64,
+          "reason": "简历显示候选人有8年后端开发经历，满足岗位3年以上年限要求；核心交易系统开发及高可用、稳定性建设与后端开发维护存在通用相关性。但岗位要求熟练Python、FastAPI项目经验、PostgreSQL，并负责招聘系统后端开发与AI评估链路建设；候选人主要技术栈为Java、Oracle，Python仅近两年用于风控脚本，未体现FastAPI、PostgreSQL、Redis、招聘系统、RAG检索或AI评估链路经验，且明确未具备互联网业务、微服务经验。因此年限达标、通用后端职责有一定相关性，但具体职责与技术栈匹配度一般，需显著扣分。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 60,
+          "reason": "“跨团队协作”无明确事实证据：简历未提及跨部门/团队协作项目、客户对接、乙方经历、开源或技术分享等。；“结果导向”仅有间接证据：核心交易系统开发及高可用/稳定性建设属于职责或能力方向，缺少主导交付、成果指标、问题解决结果等明确事实。；公司、任职时间和项目时间缺失，无法验证长期稳定任职；Python风控脚本属于学习痕迹，但不直接支撑本岗位两项价值观。；未具备互联网业务与微服务经验，虽非直接价值观负面信号，但削弱岗位场景匹配及协作场景证据。"
+        },
+        {
+          "dimension": "问卷测评",
+          "score": 79,
+          "reason": "整体技术覆盖面较全，能结合招聘系统、AI评估链路、PostgreSQL和可观测性给出方法论；最强为第5题的排障治理与第2题的数据库设计，最弱为第4题，服务边界有思路但数据迁移、灰度发布与回滚保障不充分，且候选人明确缺少互联网微服务经验。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "inconsistent_dimensions": [],
+        "quality_score": 85,
+        "issues": []
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 90,
+        "issues": []
+      }
+    },
+    {
+      "index": 5,
+      "profile": "运营转岗",
+      "level": "weak",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 14421,
+      "human_resumes": 0,
+      "human_inputs": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-99b0967e01ad4bb2bb45a73b0e7b4d15",
+      "calls_total": 5,
+      "calls_first": 5,
+      "calls_repair": 0,
+      "cost": 0.0411,
+      "llm_latency_sum_ms": 28524,
+      "schema_checked": 5,
+      "schema_valid_first": 5,
+      "schema_repaired": 0,
+      "schema_repaired_ok": 0,
+      "schema_error_fields": {},
+      "overall_score": 44,
+      "final_decision": "不推荐（流程淘汰(evaluate_dimensions)）",
+      "dim_scores": {
+        "skill": 45,
+        "experience": 40,
+        "education": 50,
+        "culture": 45,
+        "questionnaire": 0,
+        "overall": 44
+      },
+      "reasons": [],
+      "decision_check": {
+        "expected": "不推荐",
+        "model": "不推荐",
+        "exact": true,
+        "aligned": true,
+        "level_delta": 0
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "教育匹配",
+          "score": 50,
+          "reason": "简历仅明确学历为“大专”，院校和专业均未提供。岗位要求“本科及以上学历”，候选人学历未达到硬性门槛；同时专业信息缺失，无法证明其专业与后端开发、AI评估链路等职责对口。依据评分锚点，属于明显低于岗位学历要求且专业相关性无法确认，评分落在40-59区间。"
+        },
+        {
+          "dimension": "技能匹配",
+          "score": 45,
+          "reason": "仅Python在技能清单中出现且为自学脚本、无工作或项目使用佐证，FastAPI和PostgreSQL均未命中，与后端硬性要求差距较大。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 40,
+          "reason": "候选人仅有5年互联网运营经历，工作内容为用户增长与活动策划，与招聘系统后端开发及AI评估链路建设无任何关联；简历未体现Python、FastAPI、PostgreSQL等后端技术能力，职责完全不相关。虽总年限5年满足3年以上要求，但相关经验年限为0。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 45,
+          "reason": "“跨团队协作”无明确证据：简历未提供跨部门/团队协作项目、客户对接或乙方经历等客观事实。；“结果导向”无明确证据：简历未提供主导交付、责任成果、量化指标或项目成果，工作内容仅为职责和技能描述。；“长期稳定任职”无法确认：仅有5年互联网运营总年限，未提供公司信息或连续任职记录，不能作为稳定任职的明确证据。；Python自学属于持续学习痕迹，但不直接对应本岗位明确价值观，且未体现协作或结果交付。；简历无负面信号，因此不落入0-39；但因未提供有效岗位价值观证据，按信息不足默认档评分。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": true,
+        "hallucination_items": [
+          "文化契合理由引入“长期稳定任职”并因其无法确认作为评分考虑，但岗位要求未包含该价值观或任职稳定性要求，简历中也无相关事实。"
+        ],
+        "inconsistent_dimensions": [],
+        "quality_score": 75,
+        "issues": [
+          "文化契合维度存在岗位未要求的“长期稳定任职”考量，建议删除或不计入评分。",
+          "教育匹配中“专业相关性无法确认”被纳入理由，但岗位学历要求未明确专业或专业相关性要求，建议仅按本科硬门槛判断。"
+        ]
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 80,
+        "issues": [
+          "决策理由为空，缺少对不推荐结论的明确解释；但低分与不推荐不矛盾，且未发现理由与评分矛盾或幻觉事实。"
+        ]
+      }
+    },
+    {
+      "index": 6,
+      "profile": "技术扎实-管理多",
+      "level": "strong",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 62485,
+      "human_resumes": 1,
+      "human_inputs": [
+        {
+          "type": "await_questionnaire",
+          "questions": [
+            {
+              "id": "1",
+              "question": "请结合你参与的招聘与人事系统重构项目，说明你会如何用 Python + FastAPI 设计简历筛选与投递管理后端。请重点说明：核心 API 划分、PostgreSQL 表结构（候选人/职位/投递/评估结果）、关键索引与事务边界；如果原系统"
+            },
+            {
+              "id": "2",
+              "question": "岗位需要建设 AI 评估链路。请设计一条从简历解析、RAG 检索、模型评分到人工复核的完整链路，说明 FastAPI 在其中的编排方式、PostgreSQL 存储评估结果与审计日志的方案、Redis 的使用场景，以及如何处理失败重试、幂等、"
+            },
+            {
+              "id": "3",
+              "question": "请针对招聘系统中的一个复杂查询场景（例如按职位、状态、评分区间、关键词筛选候选人并分页排序），说明你在 PostgreSQL 中会如何设计表、索引和查询。请覆盖 JSONB、全文检索、联合索引、分页优化、执行计划分析，以及慢查询和锁冲突的排"
+            },
+            {
+              "id": "4",
+              "question": "线上出现以下问题：FastAPI 接口 P99 延迟升高，PostgreSQL 连接池被打满，Redis 命中率下降，AI 评估任务持续积压。请给出你的故障定位与处置方案，包括需要观察的指标、日志与链路追踪、限流降级、连接池与 SQL 优化"
+            },
+            {
+              "id": "5",
+              "question": "AI 评估链路需要产品、算法、HR 和后端跨团队协作。请说明你会如何定义接口契约与验收指标、安排灰度发布和人工复核机制、处理候选人数据隐私与审计要求，并结合你 3 年带团队经验说明任务拆分和交付风险控制方式。"
+            }
+          ],
+          "responses": {
+            "1": "基于招聘重构项目，我会用FastAPI按域拆/jobs、/candidates、/applications、/evaluations路由，Pydantic校验，投递状态机。PG表：candidates(id,姓名,联系方式JSONB,简历URL)；jobs(id,标题,JD,状态)；applications(id,candidate_id,job_id,status,source,version,",
+            "2": "链路：上传→FastAPI鉴权入队→解析服务结构化→RAG检索职位JD/规则→模型评分→人工复核→发布。FastAPI只做API编排和状态机，重活交给K8s worker。PG存evaluations(application_id,model_version,score,理由,状态)与只追加audit_log(trace_id,actor,action,before/after)。Redis缓存J",
+            "3": "招聘查询按职位、状态、评分区间、关键词分页：applications冗余job_id、status、score、created_at，建(job_id,status,score,created_at desc,id)联合索引；简历关键词用tsvector+GIN，技能/标签用JSONB+GIN。分页用(created_at,id) keyset，避免大offset；排序字段与索引一致。用EXPLA",
+            "4": "先看FastAPI P99、错误率、DB池active/wait、慢SQL、Redis命中率、队列积压与AI耗时，按trace_id串日志。处置：对非核心AI评估限流降级，读缓存兜底；查连接泄漏并临时扩容/调池，配合慢SQL索引和批量写入；Redis降级本地缓存；队列暂停低优任务、扩worker、死信重放，幂等消费。防复发：SLO告警、压测容量、池上限与队列水位、熔断和回滚预案，招聘系统灰度发布。",
+            "5": "先定OpenAPI/Pydantic契约：输入输出、错误码、SLA、审计字段；验收含解析准确率、评分一致性、复核通过率、P99、审计完整率，不承诺无数据指标。灰度按职位小流量→影子→扩量，人工复核兜底并双评抽检。隐私：最小化、脱敏、加密、RBAC、审计和保留期限。结合3年带团队，按解析/检索/评分/复核/审计拆任务，接口先行、周集成、里程碑验收；重点控算法波动、数据质量、合规与依赖延迟，备回滚。"
+          }
+        }
+      ],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配",
+        "问卷测评"
+      ],
+      "evaluated_count": 5,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-da918a7b41d8490faf91920ebc3ce5aa",
+      "calls_total": 9,
+      "calls_first": 8,
+      "calls_repair": 1,
+      "cost": 0.09019,
+      "llm_latency_sum_ms": 64112,
+      "schema_checked": 8,
+      "schema_valid_first": 7,
+      "schema_repaired": 1,
+      "schema_repaired_ok": 1,
+      "schema_error_fields": {
+        "skills": 1,
+        "language": 1
+      },
+      "overall_score": 68,
+      "final_decision": "不推荐（问卷测评不达标）",
+      "dim_scores": {
+        "skill": 65,
+        "experience": 76,
+        "education": 95,
+        "culture": 65,
+        "questionnaire": 50,
+        "overall": 68
+      },
+      "reasons": [],
+      "decision_check": {
+        "expected": "待定",
+        "model": "不推荐",
+        "exact": false,
+        "aligned": true,
+        "level_delta": 1
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "教育匹配",
+          "score": 95,
+          "reason": "候选人明确提供学历为硕士、专业为计算机；岗位要求本科及以上学历，硕士学历已达标；计算机专业与招聘系统后端开发、AI评估链路建设及Python/FastAPI/PostgreSQL等技术栈高度对口。简历未提供院校及起止时间，但核心学历层次和专业信息明确。"
+        },
+        {
+          "dimension": "技能匹配",
+          "score": 65,
+          "reason": "PostgreSQL未命中，硬性技能部分缺失且佐证不足。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 65,
+          "reason": "“跨团队协作”缺少明确客观项目证据，仅有概括性声明；团队管理年限不等同于跨团队协作。；“结果导向”仅有1项明确量化成果，未达到2项以上明确价值观证据。；简历未提供长期稳定任职、开源/技术分享、客户对接或持续学习等其他可补充证明价值观的事实。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 76,
+          "reason": "候选人明确有7年后端开发经验，超过岗位3年以上要求，其中3年带团队；曾负责招聘与人事系统重构，与岗位职责中的“招聘系统后端开发与维护”直接相关，并有跨部门协作与交付记录。但简历未明确体现“AI评估链路建设”、RAG检索、Python/FastAPI/PostgreSQL等岗位关键要求，也未给出重构成果、性能/效率等量化证据，因此相关度只能算中等偏上，不能进入高分段。"
+        },
+        {
+          "dimension": "问卷测评",
+          "score": 50,
+          "reason": "最强的是第1题，能给出招聘核心数据模型、索引和事务一致性思路；最弱的是第2、3题，均与题目要求明显错位，尤其遗漏了 PostgreSQL 迁移和 AI 评估链路架构这两个岗位关键能力。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": true,
+        "hallucination_items": [
+          "经验匹配：理由称简历未明确体现 Python/FastAPI，但简历原文技术栈明确包含“Python/FastAPI/MySQL/Redis/Kubernetes”。",
+          "经验匹配：理由称未给出重构成果、性能/效率等量化证据，但简历原文写明“把人工简历筛选流程从 3 天缩短到 4 小时”。"
+        ],
+        "inconsistent_dimensions": [],
+        "quality_score": 60,
+        "issues": [
+          "经验匹配理由对简历事实判断有误：Python/FastAPI 已在简历中明确体现，且已有“3天缩短到4小时”的量化成果；PostgreSQL、AI评估链路、RAG检索未体现是成立的。",
+          "问卷测评理由称第2题遗漏 AI 评估链路架构，但第2题作答已覆盖上传→解析→RAG检索→模型评分→人工复核、FastAPI编排、PostgreSQL评估/审计存储、Redis等，因此该扣分依据不准确；第3题也覆盖 JSONB、GIN、联合索引、keyset分页、EXPLAIN 等，称其“明显错位”依据不足。",
+          "各维度分数与各自给出的理由措辞未发现直接自相矛盾，但经验匹配和问卷测评的理由事实基础存在问题，影响评分可信度。"
+        ]
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 80,
+        "issues": []
+      }
+    },
+    {
+      "index": 7,
+      "profile": "极简简历",
+      "level": "weak",
+      "status": "completed",
+      "run_status": "completed",
+      "error": null,
+      "elapsed_ms": 6305,
+      "human_resumes": 0,
+      "human_inputs": [],
+      "evaluated_dims": [
+        "技能匹配",
+        "教育匹配",
+        "文化契合",
+        "经验匹配"
+      ],
+      "evaluated_count": 4,
+      "degraded_dims_reported": [],
+      "thread_id": "wf-5582fe812f1246bfa1110ad50eb15fe2",
+      "calls_total": 5,
+      "calls_first": 5,
+      "calls_repair": 0,
+      "cost": 0.01952,
+      "llm_latency_sum_ms": 14023,
+      "schema_checked": 5,
+      "schema_valid_first": 5,
+      "schema_repaired": 0,
+      "schema_repaired_ok": 0,
+      "schema_error_fields": {},
+      "overall_score": 27,
+      "final_decision": "不推荐（流程淘汰(evaluate_dimensions)）",
+      "dim_scores": {
+        "skill": 45,
+        "experience": 5,
+        "education": 20,
+        "culture": 40,
+        "questionnaire": 0,
+        "overall": 27
+      },
+      "reasons": [],
+      "decision_check": {
+        "expected": "不推荐",
+        "model": "不推荐",
+        "exact": true,
+        "aligned": true,
+        "level_delta": 0
+      },
+      "reason_check": {
+        "consistent": true,
+        "issues": []
+      },
+      "dim_reasons": [
+        {
+          "dimension": "教育匹配",
+          "score": 20,
+          "reason": "候选人教育背景为[]，未提供任何学历层次、院校或专业信息，无法证明其达到岗位“本科及以上学历”要求；按硬性规则不得默认本科，应评为40分以下。"
+        },
+        {
+          "dimension": "技能匹配",
+          "score": 45,
+          "reason": "仅Python命中且无工作经历/项目佐证，FastAPI与PostgreSQL明确缺失，硬性技能多项不匹配。"
+        },
+        {
+          "dimension": "经验匹配",
+          "score": 5,
+          "reason": "简历未提供任何工作经历与项目经历，无法体现招聘系统后端开发、AI 评估链路建设或 Python/FastAPI/PostgreSQL 等相关实践经验；亦未达到岗位要求的3年以上经验。依据现有简历事实，无任何可验证的相关经历。"
+        },
+        {
+          "dimension": "文化契合",
+          "score": 40,
+          "reason": "跨团队协作无证据：简历未提供跨部门/团队协作项目、开源或技术分享、客户对接或乙方经历等事实。；结果导向无证据：简历未提供项目、工作经历、主导并交付的责任成果、长期稳定任职等事实。；仅有的求职意向“后端开发”和技能“Python、数据库”属于岗位技能信息，不构成本岗位价值观的有效文化证据。"
+        }
+      ],
+      "dim_judge": {
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "inconsistent_dimensions": [],
+        "quality_score": 80,
+        "issues": []
+      },
+      "judge": {
+        "decision_consistent": true,
+        "reason_score_consistent": true,
+        "has_hallucination": false,
+        "hallucination_items": [],
+        "quality_score": 80,
+        "issues": [
+          "决策理由为空，缺少对低分维度及流程淘汰原因的具体说明，可解释性不足。",
+          "风险项为空，未说明经验、教育、问卷测评等低分项带来的潜在风险，审计追踪信息不足。"
+        ]
+      }
+    }
+  ]
+}

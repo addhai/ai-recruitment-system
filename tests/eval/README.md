@@ -34,6 +34,8 @@
 tests/eval/
   cases.json          L1 用例集（招聘评分，含断言定义）
   run_eval.py         L1 运行器（真实 LLM，有成本）
+  task_quality_eval.py     L1 统一跑批：调用数/成本/延迟 + 结构合规率 + 推理质量（有成本）
+  task_quality_compare.py  前后两轮对比 + 分数漂移守门（零成本，读两份 JSON）
   chunk_cases.json    L2 用例集（知识库检索黄金集）
   run_chunk_eval.py   L2 运行器（离线 BM25，无成本，可进 CI）
   mine_traffic.py     生产流量 → 黄金集候选生成器
