@@ -510,7 +510,7 @@ AttributeError: 'NoneType' object has no attribute '__dict__'
 新增 `tests/test_budget_accounting.py`（5 项）钉住这个口径；
 **这批测试在旧实现下有 3 项是红的**（验证过：临时还原旧代码跑一遍确认过）。
 
-### 验出来了但没动代码：`LLM_TIMEOUT_SECONDS` 不是单次调用的耗时上限
+### 已拍板并实施：`LLM_TIMEOUT_SECONDS` 不是单次调用的耗时上限
 
 `llm_json` 用的是 `timeout=45` + `max_retries=2`。timeout 是**每次 HTTP 请求**的，
 最多 3 次尝试，于是单次逻辑调用的最坏耗时 ≈ 3 × 45s。实测（本地起一个
@@ -528,12 +528,98 @@ AttributeError: 'NoneType' object has no attribute '__dict__'
 远超前端/网关的超时——用户看到的是网关报错，后台还在按次计费。
 而且超时后的降级是"改用规则模板算分"，分数与 LLM 算出来的**长得一样**。
 
-两个改法都需要你拍板，**本轮没有擅自改**：
-- 收紧重试：`max_retries` 降到 1、timeout 降到 20~30s（代价：偶发失败更多走降级）；
-- 或加一道"整条流水线的总预算"（类似 LLM 预算墙），超了直接转人工。
+**已实施的决定**（用户拍板）：timeout 45 → **90 秒**，max_retries 2 → **1**。
+
+理由不是"重试总是坏"，是两条实测数据：
+
+1. **`parse_job_description` 的延迟是双峰的**：p50 只有 4.2 秒，但 p90 高达 86.6 秒、
+   峰值 136.4 秒（507 次真实调用）。因为它要输出 8000+ tokens。
+   45 秒的超时会把"只是慢、其实能成功"的调用**误判成失败**——
+   实测该环节的失败率 2.74%（2/73），而其它环节全是 0%。
+2. **重试是全损重来**：同一 prompt 在推理型模型上再次超时的概率很高，
+   于是前两次烧掉的 token 白花，延迟也翻三倍。11/507 = 2.2% 的调用单次耗时
+   >45s，它们额外多烧了 22 次尝试。
+
+改完后：单次逻辑调用最坏从 135s → 90s，慢任务不再被误杀，无效重试少一半。
+
+**注意**：`LLM_TIMEOUT_SECONDS` 在 `.env` 里显式写的是 45，而环境变量优先级高于
+代码默认值——只改 `config.py` 不会有任何效果。`.env` 必须同步改成 90。
+（`.env` 不进版本库，所以换机器部署时别忘了。）
+
+`LLM_MAX_RETRIES` 走代码默认值 1，可用环境变量覆盖。
 
 **仍然没验到的**：真实 GitHub runner 上没跑过 CI lane（需要仓库权限）；
 真实生产流量仍然没有——上面那 16 条是按真实脏度手写的问句。
+
+---
+
+## 任务成功率评测（L3：整条工作流）
+
+前两层测的是"检索效果"和"答案质量"，这一层测的是**整条招聘工作流能不能跑完**。
+
+### 为什么不能只靠真实跑批
+
+实测（本地 507 次真实 LLM 调用）：调用层成功率 99.61%，但**任务层几乎没有
+可观测的失败样本**——本地库里只有 3 条 `workflow_runs`，n=3 算不出任何东西。
+
+而真实跑批的失败率太低：N=15 的真实任务期望失败 0.06 次，
+**测改进前后有没有差别，等于什么都没测**。
+
+所以主实验必须用**可控故障注入**：在指定节点注入指定故障，
+n 可控、归因明确、零 API 成本、同种子可复现。
+
+### 三个工具
+
+```bash
+# ① 注入实验：mock 掉最底层的 LLM 调用，按故障模式定点注入
+python tests/eval/task_success_eval.py --n 20 --include-control \
+       --out task_success_before.json
+
+# ② 真实任务：不 mock，端到端跑真 LLM，量终态/耗时/花费
+python tests/eval/task_success_real.py --n 15 --out task_success_real_after.json
+
+# ③ 前后对比
+python tests/eval/task_success_compare.py before.json after.json
+```
+
+### 注入点为什么选 `_invoke_raw`
+
+`src/services/llm_invoke._invoke_raw` 是所有 LLM 调用的最底层。
+在它上面打桩，意味着 `invoke_json` 的**降级、埋点、预算检查、熔断全是真实生产代码**，
+不是我们在评测脚本里模拟出来的。注入点选高一层（比如 mock 整个 `_llm_json`），
+测的就是我们自己写的那套 mock。
+
+### 六种故障模式
+
+| 模式 | 注入方式 | 改前的行为 |
+|---|---|---|
+| `timeout` | 抛 APITimeoutError | invoke_json 降级到 default，任务继续 |
+| `upstream_5xx` | 抛带 500 的异常 | 同上 |
+| `bad_json` | 返回非 JSON 内容 | JsonOutputParser 失败 → 降级 |
+| `bad_schema` | 合法 JSON 但字段类型不对（`score: null`） | **节点 `float(None)` 崩 → 整任务死** |
+| `db_error` | 在写库那一刻抛异常 | **整任务死** |
+| `budget_exhausted` | 抛 BudgetExceeded | 转人工 budget_halted（本来就对） |
+
+### 三个指标（都给分子/分母，不给孤立小数）
+
+- **存活率**：任务没被异常打断（终态 ∈ {waiting_human, completed, budget_halted, partial}）
+- **干净率**：全程无任何维度使用兜底分（结论完全来自模型）
+- **有结论率**：存活且库里确实落下了维度评分（结论可用）
+
+外加 **部分有用率**：任务没跑完但库里仍留有已评估维度（沉没成本）。
+
+### 两个必须守住的有效性守卫
+
+1. **对照组必须全绿**（不注入时存活率 = 1.000）。低于 1 说明工具本身坏了，
+   后面的对比全无意义。
+2. **注入必须真的命中**（`injection_missed == 0`）。不命中时工具会打
+   `<-- 注入未命中(harness 失效)`，不能静默算成"注入后任务仍然存活"。
+
+这两个守卫是被真实踩出来的：`parse_resume` 节点是**幂等**的
+（读 `resumes` 表判断是否已结构化解析），而清理不彻底时 SQLite 会复用候选人 id，
+下一个场景就读到上一轮的残留、**跳过 LLM 调用**——注入永远打不中，
+评测假绿成"注入无效"。此外 `required_skills` 必须是 dict 列表
+（`{"skill": ...}`），写成字符串列表会抛 `'str' object has no attribute 'get'`。
 
 ---
 

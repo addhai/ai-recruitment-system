@@ -569,6 +569,38 @@ python tests/eval/mine_traffic.py --limit 50 --out traffic_candidates.json
 离线层进日常 CI，向量/重排层通过 GitHub Actions 的 `workflow_dispatch`
 手动触发（勾选 `run_kb_evals`）。详见 `tests/eval/README.md`。
 
+## 任务成功率评测（L3：整条工作流）
+
+**调优结果见 [`任务成功率提升报告.md`](任务成功率提升报告.md)**。
+
+前面两层测的是"检索效果"和"答案质量"，这一层测的是**整条招聘工作流能不能跑完**。
+在此之前这件事**不可观测**：本地 `workflow_runs` 只有 3 条，n=3 算不出东西；
+而真实失败率太低（调用层 99.61% 成功），随机跑批测不出改进前后的差别。
+
+所以主实验用**可控故障注入**：在指定节点注入指定故障，
+n 可控、归因明确、零 API 成本、同种子可复现。
+
+```bash
+# 注入实验：mock 最底层 LLM 调用，按 6 类故障定点注入
+python tests/eval/task_success_eval.py --n 20 --include-control \
+       --out tests/eval/task_success_before.json
+
+# 真实任务：端到端跑真 LLM，量终态/耗时/花费
+python tests/eval/task_success_real.py --n 15 \
+       --out tests/eval/task_success_real_after.json
+
+# 前后对比
+python tests/eval/task_success_compare.py before.json after.json
+```
+
+实测结论（注入 n=120）：任务**存活率 0.733 → 1.000**（+26.7pp），
+**有结论率 0.642 → 0.867**（+22.5pp），判 `failed` 的任务从 32 个降到 **0** 个——
+原先失败的现在落成 `partial`（已完成维度保留、转人工、可重跑）。
+
+两个必须守住的有效性守卫：**对照组必须全绿**（不注入时存活率=1.000）、
+**注入必须真的命中**（`injection_missed==0`）。这两个是被真实踩出来的，
+详见 `tests/eval/README.md`。
+
 ## 注意事项
 
 - 本地默认 SQLite 即可运行；Docker 全栈含 PostgreSQL，可按需裁剪。
@@ -581,10 +613,13 @@ python tests/eval/mine_traffic.py --limit 50 --out traffic_candidates.json
   被「进程内累计」与「数据库回读」各算一次，¥5 的上限在真实花到 ¥2.5 时就会触顶；
   非回读期间还会漏算历史与其它进程的花费。已修正并补了口径测试。
 - **`LLM_TIMEOUT_SECONDS` 是单次 HTTP 请求的超时，不是整次调用的上限**：
-  客户端还会重试 2 次，所以单次模型调用最坏约 3 倍（实测 136s），
-  而一条简历要串行调约 8 次模型，尾延迟可能到分钟级。
+  客户端还会重试 1 次（`LLM_MAX_RETRIES`），所以单次模型调用最坏约 2 倍
+  （默认 90s → 最坏 180s），而一条简历要串行调约 7 次模型，尾延迟可能到分钟级。
   超时后的降级是"改用规则模板算分"，分数与模型算出来的长得一样——
-  排障时先看 `llm_call_logs` 里的 `degraded` 标记。
+  排障时先看 `llm_call_logs` 里的 `degraded` 标记，或结果里的
+  `degraded_dimensions`（哪些维度用的是兜底分）。
+  **注意 `.env` 里的 `LLM_TIMEOUT_SECONDS` 优先级高于代码默认值**，
+  改 `config.py` 不改 `.env` 不会有任何效果。
 - 生产部署务必修改 `SECRET_KEY` / `JWT_SECRET_KEY`，并配置真实 LLM 与 embedding 凭据。
 - `EMBEDDING_MODEL` 必须与 embedding 提供方的模型及维度一致（如 bge-m3 对应 1024 维），否则向量检索会报错。
 - **端口占用**：本机 8000 端口若被 Docker 容器或其他服务占用，Windows 下 `localhost` 会优先解析到 IPv6，
