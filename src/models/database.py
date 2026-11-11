@@ -334,6 +334,58 @@ class LLMCallLog(Base):
     error = Column(Text)
 
 
+class RetrievalLog(Base):
+    """检索埋点：知识库每次检索的问句、召回结果、分段耗时与当时的检索口径。
+
+    **为什么要有这张表**：此前项目只埋了「聊天大模型调用」（llm_call_logs），
+    检索环节完全没有记录，于是三个问题都答不上来：
+    - 用户到底问了什么——拿不到真实 query，无法从生产流量反哺评测集；
+    - 这条为什么没命中——不知道召回了哪些文档、是哪一路（BM25/向量）出的结果；
+    - 检索慢在哪一段——两路的耗时分不出来，只能凭感觉优化。
+
+    **记口径而不是只记结果**：切分参数与 embedding 模型一变，检索结果就不可比
+    （见 knowledge_base.chunk_config 的说明）。所以每次检索把当时生效的
+    chunk_size / chunk_overlap / embedding_model 一并写下，
+    否则把新旧结果放在一起看会得出错误结论。
+
+    **只记标题不记正文**：召回内容是文档片段正文，可能含员工个人信息；
+    正文入库既让这张表迅速膨胀，风险也高得多。标题足以定位"召回了哪篇"，
+    需要正文时回知识库按标题查即可。
+
+    **降级样本单独标记**：向量路异常只剩 BM25 时，检索结果与正常混合检索
+    不可比（degraded=True），评测时必须能把它挑出来。
+    """
+    __tablename__ = "retrieval_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    # 用户原始问句（截断到 2000 字，与接口层 KnowledgeQuery 的 max_length 一致）
+    query_text = Column(Text)
+    # sha256(query_text)：同一个问题会被反复问，聚类与去重靠它，
+    # 比对全文做 LIKE 扫描快得多
+    query_hash = Column(String(64), index=True)
+    top_k = Column(Integer)                      # 本次检索的 k
+    bm25_titles = Column(JSON)                   # BM25 一路召回的文档标题
+    vector_titles = Column(JSON)                 # 向量一路召回的文档标题
+    merged_titles = Column(JSON)                 # 融合后进入上下文的文档标题
+    # 分段耗时（毫秒）。总耗时一般不等于两路之和，差额是融合与其它开销，
+    # 三段都记下来才能判断慢在哪；vector_ms 含查询向量化的时间
+    bm25_ms = Column(Float)
+    vector_ms = Column(Float)
+    total_ms = Column(Float)
+    mode = Column(String(32))                    # 检索模式：hybrid_rag / bm25_llm / fallback …
+    # 当时的切分口径与 embedding 模型：改了就不可比，必须随结果一起留存
+    chunk_size = Column(Integer)
+    chunk_overlap = Column(Integer)
+    embedding_model = Column(String(64))
+    # 是否降级（例如向量路异常只剩 BM25）：降级样本不能混进正常样本做评测
+    degraded = Column(Boolean, default=False)
+    # 是否走过重排：重排是**一次额外的外部 API 调用**，
+    # 成本与延迟必须能单独归因，否则算总账时看不出来。
+    rerank_applied = Column(Boolean, default=False)
+    rerank_ms = Column(Float)
+
+
 class LLMSettings(Base):
     """模型接入配置（单行表，id 恒为 1）。
 
@@ -449,7 +501,20 @@ def migrate_database() -> None:
         command.stamp(cfg, bases[0])
         print(f"[db] 已有库首次纳入 alembic 管理，"
               f"已标记到基线 {bases[0]}，随后施加其后的迁移")
-    command.upgrade(cfg, "head")
+    try:
+        command.upgrade(cfg, "head")
+    except Exception as e:
+        # 报"duplicate column"没人看得懂。这条路最常见的成因是：库是用
+        # Base.metadata.create_all() 建的——表齐全但没有 alembic_version，
+        # 于是被当成旧库 stamp 到基线，随后基线之后的迁移重复加列而失败。
+        # 这种库结构其实已经是 head，删掉重建（或手工 alembic stamp head）即可。
+        raise RuntimeError(
+            "alembic 升级失败。若该库是用 Base.metadata.create_all() 建的"
+            "（表齐全但无 alembic_version），它会被当作旧库 stamp 到基线，"
+            "基线之后的迁移就会重复加列——这种库请删掉重建，"
+            "或先 `alembic stamp head` 再 `alembic upgrade head`。"
+            f"原始错误：{type(e).__name__}: {str(e)[:300]}"
+        ) from e
 
 
 def ensure_tables() -> None:
@@ -500,6 +565,10 @@ def init_db():
     # schema 由 alembic 迁移驱动（旧库会在 migrate_database 内一次性纳管）
     migrate_database()
     purge_old_llm_logs(days=settings.LLM_LOG_RETENTION_DAYS)
+    # 检索埋点同样只增不减，不清理迟早撑爆磁盘；保留期与 LLM 调用日志一致。
+    # 在函数内导入：retrieval_log 依赖本模块的模型，模块级导入会形成环。
+    from src.services.retrieval_log import purge_old_retrieval_logs
+    purge_old_retrieval_logs(days=settings.LLM_LOG_RETENTION_DAYS)
 
     import bcrypt
 
