@@ -12,8 +12,10 @@ const KnowledgeBase: React.FC = () => {
   const modeLabel: Record<string, { text: string; cls: string }> = {
     hybrid_rag: { text: '混合检索（向量+关键词）', cls: 'bg-green-50 text-green-600' },
     bm25_llm: { text: '关键词检索 + AI 生成', cls: 'bg-blue-50 text-blue-600' },
+    vector_llm: { text: '向量检索 + AI 生成', cls: 'bg-blue-50 text-blue-600' },
     fallback: { text: '规则模板回答（AI 未启用）', cls: 'bg-amber-50 text-amber-600' },
     blocked: { text: '安全拦截', cls: 'bg-red-50 text-red-600' },
+    budget_exhausted: { text: 'AI 预算已用尽（关键词模板）', cls: 'bg-amber-50 text-amber-600' },
   };
   const [loading, setLoading] = useState(false);
   const [documents, setDocuments] = useState<KnowledgeBaseDocument[]>([]);

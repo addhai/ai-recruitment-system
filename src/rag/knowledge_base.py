@@ -10,7 +10,8 @@
 import asyncio
 import os
 import shutil
-from typing import List, Dict, Any, Optional
+import time
+from typing import Any, Dict, List, Optional, Tuple
 
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 try:
@@ -35,12 +36,37 @@ except ImportError:
     jieba = None
 
 
+def _char_bigrams(text: str) -> List[str]:
+    """字符 bigram：把文本切成相邻两字的组合。
+
+    保留非空白字符即可——空白没有检索价值，混进去只会稀释词频。
+    """
+    chars = [c for c in text if not c.isspace()]
+    return ["".join(chars[i:i + 2]) for i in range(len(chars) - 1)]
+
+
 def _tokenize(text: str) -> List[str]:
-    """中文分词：jieba 优先；缺失时退化为字符 bi-gram，保证 BM25 不因整句成词而失效"""
-    if jieba is not None:
-        return [t for t in jieba.lcut(text) if t.strip()]
-    chars = [c for c in text if c.strip()]
-    return ["".join(chars[i:i + 2]) for i in range(len(chars) - 1)] or chars
+    """中文分词：jieba 词 + 字符 bigram 混合索引。
+
+    **为什么必须加 bigram**：jieba 的切分是**上下文相关**的，同一个词在
+    查询与文档里会被切成不同形状。实测「每月什么时候发工资」切成
+    ['每月','什么','时候','发工资']，而文档里的「每月15日发放上月工资」
+    切成 ['每月','15','日','发放','上','月工资']——交集只剩「每月」，
+    「工资」完全对不上。纯靠词匹配时，用户的自然提问很难命中制度原文
+    （「员工之间可以互相打听工资吗」也只能靠「员工」二字勉强接上，
+    而文档写的是「薪资」）。
+
+    加字符 bigram 之后，「工资」在两边都作为 bigram（工+资）出现，匹配
+    恢复。bigram 只作补充，词的主体地位不变；它提升的是召回而不是精度
+    ——因为 bigram 的 IDF 很高（几乎只出现在一处），偶然共现的权重极低。
+
+    没有 jieba 时退化为纯字符 bigram（与原行为一致）。
+    """
+    if jieba is None:
+        chars = [c for c in text if c.strip()]
+        return ["".join(chars[i:i + 2]) for i in range(len(chars) - 1)] or chars
+    words = [t for t in jieba.lcut(text) if t.strip()]
+    return words + _char_bigrams(text)
 
 from src.config import settings
 from src.logging_setup import get_logger
@@ -275,13 +301,145 @@ def _all_documents() -> List[Dict[str, str]]:
     return system_documents + _extra_documents
 
 
-def _split_docs():
+def chunk_config(chunk_size: Optional[int] = None,
+                 chunk_overlap: Optional[int] = None) -> Dict[str, int]:
+    """返回本次生效的切分参数。
+
+    这两个值直接决定检索结果，属于**口径**：改了就和换模型一样，
+    新旧检索结果不可直接比较。所以评测报告必须把它和模型名一起记下来。
+
+    传参时以传入值为准（评测做参数 sweep 用），不传则取全局配置。
+    """
+    return {
+        "chunk_size": int(chunk_size if chunk_size is not None else settings.KB_CHUNK_SIZE),
+        "chunk_overlap": int(chunk_overlap if chunk_overlap is not None else settings.KB_CHUNK_OVERLAP),
+    }
+
+
+def _split_docs(chunk_size: Optional[int] = None, chunk_overlap: Optional[int] = None):
     docs = _all_documents()
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50, length_function=len)
+    cfg = chunk_config(chunk_size, chunk_overlap)
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=cfg["chunk_size"], chunk_overlap=cfg["chunk_overlap"], length_function=len)
     return splitter.create_documents(
         [d["content"] for d in docs],
         metadatas=[{"title": d["title"], "source": "system" if d in system_documents else "custom"} for d in docs],
     )
+
+
+# ================================================================ 索引口径指纹
+#
+# 下面这一组解决的是「换了 embedding 模型或改了切分参数，索引怎么办」。
+
+# 索引构建逻辑本身的版本号。**不是参数变了才要重建，逻辑变了也要重建**：
+# 比如将来改了切分方式或加了元数据字段，库里已有的向量就是按老逻辑产生的。
+# 手工 +1，逼着老索引重建。
+_INDEX_SCHEMA_VERSION = 1
+
+# 我们写入 collection metadata 的键前缀。Chroma 自己会往 metadata 里写
+# 内部键（hnsw:space 等），用前缀隔开，避免覆盖或被拒。
+_FP_PREFIX = "kb_"
+
+
+def _index_fingerprint(cfg: Dict[str, int],
+                       embedding_dim: Optional[int] = None) -> Dict[str, Any]:
+    """索引口径指纹：决定"库里那些向量代表什么"的那几个值。
+
+    **为什么必须落库**：这些值任何一个变了，库里已有的向量就不再代表
+    当前的文档切分与 embedding 语义。而 Chroma 原有的探测**只能发现维度
+    变化**——换一个同样是 1024 维的 embedding 模型，维度探测照样通过，
+    旧向量被静默复用，拿新模型的 query 向量去检索旧模型的文档向量：
+    检索结果悄悄变差，且事后无从分辨（实测确认过这个行为）。
+
+    指纹写进 collection metadata，重启后仍在，于是「换模型/改切分」
+    在下次启动时就能被检测出来并重建，而不是留到人工怀疑时才追查。
+    """
+    fp: Dict[str, Any] = {
+        "index_schema_version": _INDEX_SCHEMA_VERSION,
+        "embedding_model": settings.EMBEDDING_MODEL,
+        "chunk_size": cfg["chunk_size"],
+        "chunk_overlap": cfg["chunk_overlap"],
+    }
+    if embedding_dim is not None:
+        fp["embedding_dim"] = int(embedding_dim)
+    # Chroma metadata 只接受标量值，剔除 None
+    return {k: v for k, v in fp.items() if v is not None}
+
+
+def _read_fingerprint(store: Any) -> Dict[str, Any]:
+    """从 collection metadata 读出已存的指纹（读不到当空处理）。"""
+    try:
+        meta = dict(store._collection.metadata or {})
+    except Exception:
+        return {}
+    return {k[len(_FP_PREFIX):]: v for k, v in meta.items() if k.startswith(_FP_PREFIX)}
+
+
+def _stamp_fingerprint(store: Any, fp: Dict[str, Any]) -> None:
+    """把口径指纹写进 collection metadata。
+
+    Chroma 的 get_or_create_collection 对**已存在**的集合不会覆盖 metadata
+    （实测确认），所以必须显式 modify —— 否则新指纹根本写不进去，
+    下次启动照样检测不到口径变化。
+    """
+    try:
+        current = dict(store._collection.metadata or {})
+        merged = dict(current)
+        for key, value in fp.items():
+            merged[f"{_FP_PREFIX}{key}"] = value
+        store._collection.modify(metadata=merged)
+    except Exception as e:
+        logger.warning("写入索引口径指纹失败，下次启动可能误判为口径已变: %s",
+                       f"{type(e).__name__}: {str(e)[:200]}")
+
+
+def _fingerprint_mismatch(stored: Dict[str, Any], fp: Dict[str, Any]) -> Optional[str]:
+    """返回口径不一致的原因；一致返回 None。
+
+    已有指纹为空 = 索引来源不明（老版本建出来的）。这属于「可能不可比」，
+    按项目一贯的原则（宁可多报一次可能不可比，也不要把不可比的当可比），
+    判为不一致并重建一次。
+    """
+    if not stored:
+        return "索引无口径指纹（来源不明，需重建一次以确认口径）"
+    for key, value in fp.items():
+        if key not in stored:
+            return f"指纹缺少 {key}"
+        if stored[key] != value:
+            return f"{key}: {stored[key]} → {value}"
+    return None
+
+
+def _probe_embedding_dim(embeddings: Any) -> Optional[int]:
+    """探测 embedding 的**真实**维度。
+
+    配置里的 EMBEDDING_DIMENSIONS 只是声明值，实际维度以模型输出为准——
+    两者不一致时，指纹会记录一个错的维度，失去判别能力。
+    探测失败不阻断初始化：指纹里没有维度项，仍能靠模型名/切分参数判别。
+    """
+    try:
+        probe = embeddings.embed_query("维度探测")
+        return int(len(probe))
+    except Exception as e:
+        logger.warning("embedding 维度探测失败，指纹将缺少维度项: %s",
+                       f"{type(e).__name__}: {str(e)[:200]}")
+        return None
+
+
+def _rebuild_vector_store(embeddings: Any, split_docs: List[Any],
+                          fp: Dict[str, Any]) -> Any:
+    """重建向量库并盖上口径指纹。返回新的 store。"""
+    try:
+        Chroma(collection_name=COLLECTION_NAME, embedding_function=embeddings,
+               persist_directory=PERSIST_DIR).delete_collection()
+    except Exception:
+        _reset_vector_dir()
+    store = Chroma.from_documents(
+        documents=split_docs, embedding=embeddings,
+        collection_name=COLLECTION_NAME, persist_directory=PERSIST_DIR,
+    )
+    _stamp_fingerprint(store, fp)
+    return store
 
 
 def _reset_vector_dir():
@@ -311,10 +469,14 @@ def _reset_vector_dir():
     os.makedirs(PERSIST_DIR, exist_ok=True)
 
 
-def init_knowledge_base(force: bool = False) -> bool:
+def init_knowledge_base(force: bool = False,
+                        chunk_size: Optional[int] = None,
+                        chunk_overlap: Optional[int] = None) -> bool:
     """初始化检索链。返回向量检索是否可用（False 表示降级为 BM25/模板）。
 
     force=True 时强制重建（添加自定义文档后调用）。
+    chunk_size/chunk_overlap 传值时用该参数切分，不传取全局配置；
+    评测做参数 sweep 时靠这个在不改动生产代码的前提下试不同切分策略。
     """
     global _vector_store, _bm25_retriever, _qa_chain, _chat_llm, _init_attempted
     if _init_attempted and not force:
@@ -326,44 +488,49 @@ def init_knowledge_base(force: bool = False) -> bool:
 
     _chat_llm = _build_chat_llm()
     embeddings = _build_embeddings()
-    split_docs = _split_docs()
+    split_docs = _split_docs(chunk_size, chunk_overlap)
 
-    # ---- 向量库：旧维度数据自动重建；force 时全量重建（保证自定义文档进入且无重复）----
+    # ---- 向量库：口径指纹不一致则重建；索引条数对不上也重建 ----
     if embeddings is not None:
         os.makedirs(PERSIST_DIR, exist_ok=True)
         try:
+            cfg = chunk_config(chunk_size, chunk_overlap)
+            fp = _index_fingerprint(cfg, _probe_embedding_dim(embeddings))
+
             if force:
-                try:
-                    Chroma(collection_name=COLLECTION_NAME, embedding_function=embeddings,
-                           persist_directory=PERSIST_DIR).delete_collection()
-                except Exception:
-                    _reset_vector_dir()
-                _vector_store = Chroma.from_documents(
-                    documents=split_docs, embedding=embeddings,
-                    collection_name=COLLECTION_NAME, persist_directory=PERSIST_DIR,
-                )
+                _vector_store = _rebuild_vector_store(embeddings, split_docs, fp)
             else:
-                _vector_store = Chroma(
+                store = Chroma(
                     collection_name=COLLECTION_NAME,
                     embedding_function=embeddings,
                     persist_directory=PERSIST_DIR,
                 )
-                try:
-                    if _vector_store._collection.count() > 0:
-                        # 探测：旧库维度与当前 embedding 模型不一致时查询会报错
-                        _vector_store.similarity_search("探测", k=1)
-                    else:
-                        _vector_store.add_documents(split_docs)
-                except Exception:
-                    print("[knowledge_base] 向量库维度不匹配或数据损坏，重建索引...")
+                stored = _read_fingerprint(store)
+                reason = _fingerprint_mismatch(stored, fp)
+                if reason:
+                    # 口径变了（换了 embedding 模型 / 改了切分参数 / 老库无指纹）
+                    # 或索引条数与当前切分结果对不上（新增了系统文档但没 force 重建）：
+                    # 两种情况都必须重建，否则库里留着的是语义已经不兼容的向量。
+                    logger.warning("向量库口径不一致，重建索引：%s", reason)
+                    _vector_store = _rebuild_vector_store(embeddings, split_docs, fp)
+                else:
                     try:
-                        _vector_store.delete_collection()
+                        count = store._collection.count()
+                        if count != len(split_docs):
+                            # 条数对不上：要么缺（新增了文档），要么多（删改过文档）。
+                            # 增量修补比全量重建贵且容易留下不一致的碎片，
+                            # 这里直接重建——语料规模小，重建成本可接受。
+                            logger.warning("向量库条数与当前切分结果不一致（%d vs %d），重建索引",
+                                           count, len(split_docs))
+                            _vector_store = _rebuild_vector_store(embeddings, split_docs, fp)
+                        else:
+                            # 探测：旧库维度与当前 embedding 模型不一致时查询会报错
+                            store.similarity_search("探测", k=1)
+                            _stamp_fingerprint(store, fp)
+                            _vector_store = store
                     except Exception:
-                        _reset_vector_dir()
-                    _vector_store = Chroma.from_documents(
-                        documents=split_docs, embedding=embeddings,
-                        collection_name=COLLECTION_NAME, persist_directory=PERSIST_DIR,
-                    )
+                        logger.warning("向量库维度不匹配或数据损坏，重建索引")
+                        _vector_store = _rebuild_vector_store(embeddings, split_docs, fp)
         except Exception as e:
             print(f"[knowledge_base] 向量库初始化失败，降级为 BM25 检索: {type(e).__name__}: {str(e)[:200]}")
             _vector_store = None
@@ -410,33 +577,226 @@ def init_knowledge_base(force: bool = False) -> bool:
     return _vector_store is not None
 
 
+def index_stats(split_docs: Optional[List[Any]] = None) -> Dict[str, Any]:
+    """索引统计：块数、长度分布、空块率、重复率。
+
+    **为什么要它**：改切分策略时，"切成了多少块"是最先要看的数字——
+    块数突然翻倍说明切分过碎（检索精度上升但上下文被截断），块数骤减
+    说明切得过粗（BM25 分数被无关内容稀释）。光看用例通过与否看不出
+    这个变化，因为用例断言的是检索结果，不是索引形态。
+
+    空块与重复块也要单独盯：它们进了索引却永远召不回，纯属污染。
+    """
+    docs = split_docs if split_docs is not None else _split_docs()
+    lengths = [len(d.page_content) for d in docs]
+    empty = sum(1 for n in lengths if n == 0)
+    keys = [_doc_key(d) for d in docs]
+    duplicates = len(keys) - len(set(keys))
+    by_title: Dict[str, int] = {}
+    for d in docs:
+        title = d.metadata.get("title", "")
+        by_title[title] = by_title.get(title, 0) + 1
+    return {
+        "documents": len(by_title),
+        "chunks": len(docs),
+        "avg_chunk_len": round(sum(lengths) / len(lengths), 1) if lengths else 0,
+        "min_chunk_len": min(lengths) if lengths else 0,
+        "max_chunk_len": max(lengths) if lengths else 0,
+        "empty_chunks": empty,
+        "duplicate_chunks": duplicates,
+        "chunks_per_document": by_title,
+    }
+
+
 def _doc_key(doc) -> str:
     return f"{doc.metadata.get('title', '')}|{doc.page_content[:60]}"
 
 
-def _retrieve_docs(query: str, k: int = 4) -> List[Any]:
-    """混合检索：BM25 关键词命中在前（精确匹配权重高），向量语义结果补充，按内容去重。"""
-    merged: List[Any] = []
-    seen = set()
+# RRF 的平滑常数。取 60 是信息检索里的常规值：它让"排第 1 的命中"与
+# "排第 10 的命中"的差距不至于过大，同时仍保留名次信息。
+_RRF_K = 60
 
-    def _add(docs):
-        for d in docs:
-            key = _doc_key(d)
-            if key not in seen:
-                seen.add(key)
-                merged.append(d)
+
+def _rrf_fuse(doc_lists: List[List[Any]], k: int) -> List[Any]:
+    """Reciprocal Rank Fusion：多路召回按名次加权合并。
+
+    score(d) = Σ 1 / (_RRF_K + rank_i(d))，rank 从 1 开始计。
+
+    **为什么用 RRF 而不是加权求和**：BM25 分数是无界正数，余弦相似度是
+    0~1，两者量纲完全不同。直接加权必须先归一化，而归一化对样本分布
+    高度敏感（换个语料就得重调权重）。RRF 只看名次、不看分数绝对值，
+    天然免疫量纲差异，且不需要任何归一化参数——这是它被广泛使用的
+    根本原因。
+
+    同一份文档被两路同时召回时，它的 RRF 分是两路贡献之和，
+    这正是混合检索想要的：两路都认的文档自然排前面。
+    """
+    scores: Dict[str, float] = {}
+    order: Dict[str, Any] = {}
+    for docs in doc_lists:
+        for rank, doc in enumerate(docs, start=1):
+            key = _doc_key(doc)
+            scores[key] = scores.get(key, 0.0) + 1.0 / (_RRF_K + rank)
+            if key not in order:
+                order[key] = doc
+    # 同分时按 key 排序，保证同样的输入得到同样的输出（可复现）
+    ranked = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [order[key] for key, _ in ranked[:k]]
+
+
+def _retrieve_docs(query: str, k: int = 4) -> List[Any]:
+    """混合检索入口：返回融合后的文档列表。"""
+    docs, _stats = _retrieve_with_stats(query, k=k)
+    return docs
+
+
+def _retrieve_with_stats(query: str, k: int = 4) -> Tuple[List[Any], Dict[str, Any]]:
+    """检索并返回各路命中明细（供埋点与模式判定使用）。
+
+    **这里换掉过一套实现，值得说明原因**：原来先把 BM25 的结果全部塞进
+    列表、再把向量结果追加到后面，最后 merged[:k] 截断。但 BM25Retriever
+    的 k 就是 4，且它对**任何**查询都回满 4 条（哪怕查询完全无关，实测
+    「今天股市行情如何」照样回 4 条）——于是列表在轮到向量结果之前就已经
+    满了，向量结果被整段截掉。所谓"混合检索"实际是 BM25-only：向量库
+    照建（每次重建还要重嵌全库、花 embedding 成本），线上却一条都不读。
+
+    现在改成两路各自取候选、RRF 融合后再截断，两路都能真正进入上下文。
+    """
+    bm25_docs: List[Any] = []
+    vector_docs: List[Any] = []
+    bm25_ms = 0.0
+    vector_ms = 0.0
+    degraded = False
 
     if _bm25_retriever is not None:
+        started = time.time()
         try:
-            _add(_bm25_retriever.invoke(query))
+            bm25_docs = list(_bm25_retriever.invoke(query))
         except Exception as e:
-            print(f"[knowledge_base] BM25 检索异常: {type(e).__name__}: {str(e)[:100]}")
+            degraded = True
+            logger.warning("BM25 检索异常: %s", f"{type(e).__name__}: {str(e)[:200]}")
+        bm25_ms = (time.time() - started) * 1000
+
     if _vector_store is not None:
+        started = time.time()
         try:
-            _add(_vector_store.similarity_search(query, k=k))
+            vector_docs = list(_vector_store.similarity_search(query, k=k))
         except Exception as e:
-            print(f"[knowledge_base] 向量检索异常: {type(e).__name__}: {str(e)[:100]}")
-    return merged[:k]
+            degraded = True
+            logger.warning("向量检索异常: %s", f"{type(e).__name__}: {str(e)[:200]}")
+        vector_ms = (time.time() - started) * 1000
+
+    # 候选池先不截断到 k：重排需要有多余候选才能改变顺序，否则重排无事可做。
+    pool_size = k
+    if settings.RERANK_ENABLED:
+        pool_size = max(k, int(settings.RERANK_CANDIDATES or k))
+    fused = _rrf_fuse([bm25_docs, vector_docs], pool_size)
+    rerank_started = time.time()
+    reranked, rerank_applied = _rerank(query, fused, k)
+    rerank_ms = (time.time() - rerank_started) * 1000
+    merged = reranked[:k]
+
+    stats: Dict[str, Any] = {
+        "bm25_titles": [d.metadata.get("title", "") for d in bm25_docs],
+        "vector_titles": [d.metadata.get("title", "") for d in vector_docs],
+        "merged_titles": [d.metadata.get("title", "") for d in merged],
+        "bm25_ms": round(bm25_ms, 2),
+        "vector_ms": round(vector_ms, 2),
+        "total_ms": round(bm25_ms + vector_ms, 2),
+        "top_k": k,
+        "degraded": degraded,
+        "mode": _retrieval_mode(bm25_docs, vector_docs),
+        "rerank_applied": rerank_applied,
+        "rerank_ms": round(rerank_ms, 2),
+        "candidate_pool": len(fused),
+    }
+    return merged, stats
+
+
+def _build_reranker() -> Optional[Dict[str, Any]]:
+    """构建重排客户端。返回 None 表示不启用重排。
+
+    重排是**可选增强**：没开开关、没有凭据、接口不通，都应该退回
+    「RRF 融合后直接截断」——检索链路不能因为一个锦上添花的环节挂掉。
+
+    凭据与地址默认复用 embedding 那一套（同一网关通常同时提供 rerank 接口），
+    所以多数部署不需要额外配置。
+    """
+    if not settings.RERANK_ENABLED:
+        return None
+    api_key = settings.RERANK_API_KEY or settings.embedding_api_key
+    base = (settings.RERANK_API_BASE or settings.EMBEDDING_API_BASE or "").rstrip("/")
+    if not api_key or not base:
+        return None
+    return {"api_key": api_key, "base": base, "model": settings.RERANK_MODEL}
+
+
+def _rerank(query: str, docs: List[Any], k: int) -> Tuple[List[Any], bool]:
+    """用交叉编码器对候选逐条精排。返回 (重排后的文档, 是否真的重排了)。
+
+    **失败一律沿用原序**：重排是加分项，不能因为它失败就把召回结果丢掉。
+    """
+    client = _build_reranker()
+    if client is None or len(docs) <= 1:
+        return docs, False
+
+    try:
+        import httpx
+
+        resp = httpx.post(
+            f"{client['base']}/rerank",
+            headers={"Authorization": f"Bearer {client['api_key']}",
+                     "Content-Type": "application/json"},
+            json={
+                "model": client["model"],
+                "query": query,
+                "documents": [d.page_content for d in docs],
+                "top_n": len(docs),
+            },
+            timeout=min(settings.LLM_TIMEOUT_SECONDS or 30, 10),
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results") or []
+        if not results:
+            return docs, False
+
+        # 返回项形如 {"index": i, "relevance_score": s}，顺序即新序
+        ordered: List[Any] = []
+        used = set()
+        for item in results:
+            idx = item.get("index")
+            if not isinstance(idx, int) or idx < 0 or idx >= len(docs) or idx in used:
+                continue
+            used.add(idx)
+            ordered.append(docs[idx])
+        # 接口漏掉的候选按原序补在后面，避免重排后条目变少
+        for i, doc in enumerate(docs):
+            if i not in used:
+                ordered.append(doc)
+        return ordered[:k], True
+    except Exception as e:
+        logger.warning("重排失败，沿用融合顺序: %s",
+                       f"{type(e).__name__}: {str(e)[:200]}")
+        return docs, False
+
+
+def _retrieval_mode(bm25_docs: List[Any], vector_docs: List[Any]) -> str:
+    """检索模式标签：**必须如实反映哪几路真正参与了**。
+
+    原实现按"向量库是否可用"来判，于是只要配了 embedding 就报 hybrid_rag，
+    即使向量结果因 BM25 配额截断而一条都没进上下文。标签会骗人：排障时
+    据此判断"走了混合检索"就会走进死胡同，成本页也会把 embedding 的开销
+    算到一条根本没参与的链路上。
+    """
+    has_bm25 = bool(bm25_docs)
+    has_vector = bool(vector_docs)
+    if has_bm25 and has_vector:
+        return "hybrid_rag"
+    if has_bm25:
+        return "bm25_llm"
+    if has_vector:
+        return "vector_llm"
+    return "fallback"
 
 
 def _format_docs(docs: List[Any]) -> str:
@@ -572,13 +932,48 @@ def _invoke_qa_with_instrumentation(context: str, question: str) -> str:
         raise
 
 
+def _write_retrieval_log(query: str, stats: Dict[str, Any]) -> None:
+    """写检索埋点。
+
+    检索侧此前完全没有埋点，导致：无法知道用户问了什么、召回了哪些文档、
+    哪一路出的结果、耗时多少——既没法从生产流量反哺评测集，也没法回答
+    「这条为什么没命中」。
+
+    写库失败绝不能影响主流程，所以整段包在 try 里。
+    """
+    try:
+        from src.services import retrieval_log
+        cfg = chunk_config()
+        retrieval_log.write_retrieval_log(
+            query_text=query,
+            top_k=stats.get("top_k"),
+            bm25_titles=stats.get("bm25_titles"),
+            vector_titles=stats.get("vector_titles"),
+            merged_titles=stats.get("merged_titles"),
+            bm25_ms=stats.get("bm25_ms"),
+            vector_ms=stats.get("vector_ms"),
+            total_ms=stats.get("total_ms"),
+            mode=stats.get("mode"),
+            chunk_size=cfg["chunk_size"],
+            chunk_overlap=cfg["chunk_overlap"],
+            embedding_model=settings.EMBEDDING_MODEL,
+            degraded=stats.get("degraded", False),
+            rerank_applied=stats.get("rerank_applied", False),
+            rerank_ms=stats.get("rerank_ms"),
+        )
+    except Exception as e:
+        # 埋点失败只告警：检索本身已经成功了，不能因为写日志失败而让用户看到报错
+        logger.warning("写检索日志失败: %s", f"{type(e).__name__}: {str(e)[:200]}")
+
+
 def _query_sync(query: str) -> Dict[str, Any]:
-    vector_ok = init_knowledge_base()
+    init_knowledge_base()
     if _qa_chain is None:
         return fallback_answer(query)
 
     try:
-        docs = _retrieve_docs(query)
+        docs, stats = _retrieve_with_stats(query)
+        _write_retrieval_log(query, stats)
         if not docs:
             # 检索器都没命中：交模板兜底，避免 LLM 无依据编造
             return fallback_answer(query)
@@ -598,7 +993,8 @@ def _query_sync(query: str) -> Dict[str, Any]:
         return {
             "answer": answer if isinstance(answer, str) else str(answer),
             "sources": sources,
-            "mode": "hybrid_rag" if vector_ok else "bm25_llm",
+            # 如实反映哪几路真正参与了检索，而不是"向量库是否可用"
+            "mode": stats.get("mode") or "fallback",
         }
     except Exception as e:
         print(f"[knowledge_base] RAG 查询失败，降级模板回答: {type(e).__name__}: {str(e)[:200]}")

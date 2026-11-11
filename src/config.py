@@ -29,6 +29,33 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "BAAI/bge-large-zh-v1.5"
     EMBEDDING_DIMENSIONS: int = 1024
 
+    # 重排（rerank）：检索召回后用 cross-encoder 对候选逐条精排。
+    #
+    # 为什么需要它：向量检索是"双塔"编码，query 与文档**各自**编码后再比余弦，
+    # 两者没有交互过——所以它擅长"大概相关"，却分不清"更相关"。
+    # 交叉编码器把 query 与文档拼在一起送进模型，逐条算相关性，能把
+    # 「大概相关」里最相关的挑出来。实测语义改写类查询的 recall@4 是 1.0
+    # 但 Top-1 只有 0.6——多出来的差值正是重排的用武之地。
+    #
+    # 默认走与 embedding 同一家的 SiliconFlow（同一网关同时提供 rerank 接口）。
+    # 留空则回退到 EMBEDDING_*，所以多数部署不需要额外配置。
+    RERANK_API_KEY: str = ""
+    RERANK_API_BASE: str = ""
+    RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    # 重排的开关：关掉就退回到「RRF 融合后直接截断」，行为与从前一致。
+    RERANK_ENABLED: bool = True
+    # 送进重排的候选数。必须大于最终返回的 k，否则重排没有可挑的余地。
+    RERANK_CANDIDATES: int = 8
+
+    # 知识库切分参数。**这两个值是检索口径的一部分**：改了它们，
+    # 同一批问题的召回结果会变，历史检索评测不再可比——与换 chat 模型、
+    # 换 embedding 模型是同一类"不可比变量"。所以评测报告必须把它们一起记下来。
+    #
+    # 提成配置项有两个用处：评测运行器可以不碰代码就做参数 sweep；
+    # 生产上要临时调切分策略也不必改代码再回滚。
+    KB_CHUNK_SIZE: int = 500
+    KB_CHUNK_OVERLAP: int = 50
+
     @property
     def embedding_api_key(self) -> str:
         return self.EMBEDDING_API_KEY or self.LLM_API_KEY

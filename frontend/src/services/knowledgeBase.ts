@@ -8,7 +8,10 @@ export interface KnowledgeBaseDocument {
 export interface QueryResult {
   answer: string;
   sources: { title: string; content?: string }[];
-  mode?: 'hybrid_rag' | 'bm25_llm' | 'fallback' | 'blocked';
+  // mode 如实反映**哪几路真正参与了检索**，而不是"向量库是否可用"：
+  // hybrid_rag = 关键词与向量都进了上下文；bm25_llm = 只有关键词；
+  // vector_llm = 只有向量；fallback = 走规则模板；blocked = 安全拦截。
+  mode?: 'hybrid_rag' | 'bm25_llm' | 'vector_llm' | 'fallback' | 'blocked' | 'budget_exhausted';
 }
 
 export const queryKnowledgeBase = async (query: string): Promise<QueryResult> => {

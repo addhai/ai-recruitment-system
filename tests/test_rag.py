@@ -14,10 +14,26 @@ from src.rag import knowledge_base as kb
 def _bm25_only(monkeypatch):
     """所有用例都在「无 embedding」模式下运行，保证离线可重复"""
     monkeypatch.setattr(kb, "_build_embeddings", lambda: None)
-    # 清空自定义文档，保证用例间隔离
+
+    # 清空自定义文档，保证用例间隔离。
+    # **必须连数据库里的行一起清**：这些用例用 add_document 往 knowledge_documents
+    # 写了行，而只清内存缓存（kb._extra_documents）的话，那些行会留在**共享的
+    # 临时测试库**里，污染后续所有用例——语料一多，BM25 的 IDF 就会变，
+    # 别的文件里的断言会被莫名其妙地弄挂（实测踩过）。
+    from src.models.database import SessionLocal, KnowledgeDocument
+
+    def _purge():
+        with SessionLocal() as db:
+            db.query(KnowledgeDocument).filter(
+                KnowledgeDocument.title.like("%（单测）%")
+            ).delete(synchronize_session=False)
+            db.commit()
+
+    _purge()
     kb._extra_documents.clear()
     kb.init_knowledge_base(force=True)
     yield
+    _purge()
     kb._extra_documents.clear()
 
 
