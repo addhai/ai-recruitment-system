@@ -11,6 +11,11 @@ os.close(_fd)
 os.environ["DATABASE_URL"] = "sqlite:///" + Path(_db_path).as_posix()
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("LLM_API_KEY", "test-key")
+# 重排在测试里必须关掉：它是**一次外部 API 调用**，而项目的 .env 里通常
+# 配着真实的 embedding 凭据——不关的话，测试会真的去打 rerank 接口：
+# 既让 CI 依赖网络（慢且可能不稳定），又会改变检索顺序、让断言变得随机。
+# 这条必须在 import src 之前设（Settings 在实例化时读环境变量）。
+os.environ["RERANK_ENABLED"] = "false"
 
 import pytest
 from fastapi.testclient import TestClient
