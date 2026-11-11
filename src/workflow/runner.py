@@ -244,6 +244,42 @@ def _get_active_run(db, candidate_id: int) -> Optional[WorkflowRun]:
     )
 
 
+def _attribute_failure(thread_id: Optional[str]) -> Dict[str, Any]:
+    """把一次失败归因到「哪个环节、已经花了多少钱、哪些环节降级过」。
+
+    为什么必须归因：没有它，失败在 WorkflowRun 里只是一句错误字符串。
+    于是三个问题都答不上来——卡在哪一步、这次烧了多少钱、哪个环节其实
+    已经在用兜底分。成功率也因此无法持续监控：只能事后翻日志。
+
+    数据来源是 llm_call_logs 的 thread_id 列——埋点在写入时就带上了运行标识，
+    所以一次运行的所有调用（含失败的、降级的）能一次查全。
+    """
+    out: Dict[str, Any] = {
+        "failed_call_site": None,
+        "cost_spent": 0.0,
+        "degraded_call_sites": [],
+        "call_count": 0,
+    }
+    if not thread_id:
+        return out
+    try:
+        from src.models.database import LLMCallLog
+        with SessionLocal() as db:
+            rows = (db.query(LLMCallLog)
+                    .filter(LLMCallLog.thread_id == thread_id)
+                    .order_by(LLMCallLog.id.asc()).all())
+            out["call_count"] = len(rows)
+            out["cost_spent"] = round(sum((r.cost or 0.0) for r in rows), 4)
+            bad = [r for r in rows if (r.status or "ok") != "ok"]
+            if bad:
+                out["failed_call_site"] = bad[-1].call_site
+            out["degraded_call_sites"] = sorted({r.call_site for r in rows if r.degraded})
+    except Exception:
+        # 归因失败不能反过来把业务搞挂——它只是锦上添花的诊断信息
+        pass
+    return out
+
+
 def _build_result(values: Dict[str, Any], candidate: Candidate) -> Dict[str, Any]:
     """组装前端兼容的最终结果结构"""
     unconstrained = values.get("unconstrained_dimensions") or []
@@ -296,6 +332,10 @@ def _build_result(values: Dict[str, Any], candidate: Candidate) -> Dict[str, Any
         "questionnaire_score": int(values.get("questionnaire_score") or 0),
         "interview_scores": values.get("interview_scores") or [],
         "unconstrained_dimensions": unconstrained,
+        # 本次运行里**用了兜底值**的维度：LLM 调用失败时 invoke_json 会降级返回
+        # 默认值（多数是 70 分），它看起来像正常评分，实际根本没评。
+        # 必须随结果一起返回，否则 HR 看到的是"模型给了他 70 分"而不是"模型挂了"。
+        "degraded_dimensions": list(values.get("degraded_dimensions") or []),
         "needs_review": bool(values.get("needs_review")),
         "review_reason": values.get("review_reason"),
         "review_detail": values.get("review_detail"),
@@ -513,8 +553,15 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
         if outcome["status"] == "waiting":
             interrupt_payload = outcome["interrupt"]
             wait_type = interrupt_payload.get("type", "unknown")
+            values = outcome.get("values") or {}
+            _overall, assessed = compute_overall(values)
             _update_run_merging_results(
-                run_id, {"thread_id": thread_id, "interrupt": interrupt_payload},
+                run_id, {"thread_id": thread_id, "interrupt": interrupt_payload,
+                         # 挂起时也要记下"哪些维度用了兜底值"：
+                         # 挂起是最常见的中途状态，而 HR 正是在这个阶段看分数。
+                         # 不记的话，兜底 70 分会被当成模型给的正常评分。
+                         "assessed_dimensions": assessed,
+                         "degraded_dimensions": list(values.get("degraded_dimensions") or [])},
                 status="waiting_human", current_step=wait_type)
             await notify_workflow_progress(candidate_id, outcome.get("progress", 0), wait_type,
                                            {"waiting": True, "candidate_name": candidate_name})
@@ -571,10 +618,63 @@ async def _finalize_outcome(outcome: Dict[str, Any], run_id: int,
             }
 
         if outcome["status"] == "error":
+            # 异常中断：**不丢弃已完成的工作**。
+            #
+            # 此前这里只写 {"error": ...} 就把 run 标成 failed，于是
+            # 断点之前已经评出来的维度、已经花掉的钱全部沉没——HR 看到的是
+            # 一句"失败"，得从头再跑一遍。而评分层其实早就支持缺失维度
+            # 按剩余权重重归一化（compute_overall），部分结果完全可以用。
+            #
+            # 所以这里与「预算耗尽」走同一套语义：记已评估维度、转人工、
+            # 标注可重跑。终态用 partial 而不是 failed，是为了让"失败"与
+            # "有产出的中断"在统计上可区分——不能把转人工粉饰成完成。
+            values = outcome.get("values") or {}
+            _overall, assessed = compute_overall(values)
+            error_text = outcome.get("error") or ""
+            failed_step = values.get("current_step") or "unknown"
+            attribution = _attribute_failure(thread_id)
+            elapsed_ms = int(max(0.0, (time.time() - started_at) * 1000))
+
+            db_actions.set_candidate_status(candidate_id, "pending_manual")
+            db_actions.upsert_talent_pool(
+                candidate_id, ["异常中断", "待人工评估"],
+                f"AI 评估在「{failed_step}」环节中断：{error_text[:200]}。"
+                f"已完成维度：{', '.join(assessed) or '无'}。"
+                f"本次已花费 ¥{attribution.get('cost_spent', 0.0)}。"
+                f"请人工评估或重跑。",
+            )
             _update_run_merging_results(
-                run_id, {"thread_id": thread_id, "error": outcome.get("error")},
-                status="failed")
-            return {"status": "error", "workflow_run_id": run_id, "error": outcome.get("error")}
+                run_id,
+                {
+                    "thread_id": thread_id,
+                    "error": error_text,
+                    "partial": True,
+                    "assessed_dimensions": assessed,
+                    "degraded_dimensions": list(values.get("degraded_dimensions") or []),
+                    "failed_step": failed_step,
+                    "failed_call_site": attribution.get("failed_call_site"),
+                    "cost_spent": attribution.get("cost_spent"),
+                    "degraded_call_sites": attribution.get("degraded_call_sites"),
+                    "elapsed_ms": elapsed_ms,
+                    # partial 不算活跃运行（_get_active_run 只认 running/waiting_human），
+                    # 所以 HR 可以直接重跑，不会撞「已有进行中的流程」
+                    "can_rerun": True,
+                },
+                status="partial",
+                current_step=failed_step,
+            )
+            return {
+                "status": "partial",
+                "candidate_id": candidate_id,
+                "partial": True,
+                "error": error_text,
+                "assessed_dimensions": assessed,
+                "failed_step": failed_step,
+                "failed_call_site": attribution.get("failed_call_site"),
+                "cost_spent": attribution.get("cost_spent"),
+                "elapsed_ms": elapsed_ms,
+                "message": "AI 评估中途异常，已保留已完成维度的结果，请人工评估或重跑",
+            }
 
         # completed
         result = _build_result(outcome.get("values") or {}, candidate)

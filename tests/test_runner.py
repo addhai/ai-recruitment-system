@@ -167,16 +167,27 @@ def test_finalize_waiting_updates_run_and_returns_message():
         assert run.results["thread_id"] == "wf-t1"
 
 
-def test_finalize_error_marks_failed():
+def test_finalize_error_marks_partial():
+    """异常中断的终态是 partial，不是 failed。
+
+    为什么要改：此前异常分支只写一句 error 就把 run 标成 failed，
+    断点之前已评出来的维度、已花掉的钱全部沉没；而预算耗尽分支却会
+    记 assessed_dimensions、转人工、标注可重跑。同一件事两种处理。
+    终态用 partial，是为了让"有产出的中断"与"彻底失败"在统计上可区分——
+    不能把转人工粉饰成完成，也不能把它混进失败里。
+    """
     cid = _mk_candidate()
     rid = _mk_run(cid)
     out = asyncio.run(runner._finalize_outcome(
         {"status": "error", "error": "LLM 超时"}, rid, cid, "候选人", "wf-t2", 0.0,
     ))
-    assert out["status"] == "error" and out["error"] == "LLM 超时"
+    assert out["status"] == "partial"
+    assert out["error"] == "LLM 超时"
+    assert out["partial"] is True
     with SessionLocal() as db:
         run = db.query(WorkflowRun).filter(WorkflowRun.id == rid).first()
-        assert run.status == "failed"
+        assert run.status == "partial"
+        assert run.results["partial"] is True
 
 
 def test_finalize_completed_writes_full_result():
@@ -243,7 +254,9 @@ def test_finalize_error_keeps_scoring_metadata():
         {"status": "error", "error": "LLM 超时"}, rid, cid, "候选人", "wf-err", 0.0))
     with SessionLocal() as db:
         run = db.query(WorkflowRun).filter(WorkflowRun.id == rid).first()
-        assert run.status == "failed"
+        # 终态从 failed 改成 partial：异常中断不再是"什么都没留下的失败"，
+        # 而是"已完成维度保留、转人工、可重跑"。口径信息必须照样活下来。
+        assert run.status == "partial"
         assert run.results["error"] == "LLM 超时"
         assert run.results["thread_id"] == "wf-err"
         assert run.results["scoring_fingerprint"] == "fp-error"
