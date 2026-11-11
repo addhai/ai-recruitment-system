@@ -116,6 +116,11 @@ const ReviewQueue: React.FC = () => {
                         基于 {item.assessed_dimensions.length} 个维度
                       </p>
                     )}
+                    {(item.degraded_dimensions?.length || 0) > 0 && (
+                      <p className="text-[11px] text-red-600 mt-1">
+                        {item.degraded_dimensions.length} 个维度为兜底值
+                      </p>
+                    )}
                   </div>
                 </div>
 

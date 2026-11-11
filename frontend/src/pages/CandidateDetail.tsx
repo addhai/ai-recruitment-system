@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, FileText, Award, Target, Users, Play, Loader2, AlertCircle, Clock } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Award, Target, Users, Play, Loader2, AlertCircle, AlertTriangle, Clock } from 'lucide-react';
 import { getCandidate, getResume, runWorkflow } from '../services/candidates';
 import { apiRequest, API_BASE_URL } from '../services/api';
 import type { Candidate } from '../types';
@@ -67,6 +67,8 @@ const CandidateDetail: React.FC = () => {
   const [evaluations, setEvaluations] = useState<EvaluationItem[]>([]);
   const [workflowResult, setWorkflowResult] = useState<WorkflowResult | null>(null);
   const [workflowWaiting, setWorkflowWaiting] = useState<{ wait_type: string; message: string; progress: number } | null>(null);
+  // 工作流异常中断（partial）：已评估维度保留，转人工但不是"失败"
+  const [workflowPartial, setWorkflowPartial] = useState<{ message: string; error?: string; failed_step?: string; assessed_dimensions?: string[] } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [workflowError, setWorkflowError] = useState<string | null>(null);
@@ -93,6 +95,19 @@ const CandidateDetail: React.FC = () => {
         if (wf?.status === 'completed' && wf?.results?.final_decision) {
           setWorkflowResult(wf.results);
           setWorkflowProgress(100);
+          setWorkflowWaiting(null);
+          setWorkflowPartial(null);
+        } else if (wf?.status === 'partial') {
+          // 异常中断但已完成维度保留——不能当成"失败"清空页面，
+          // 也不能当成"完成"报喜，两者都会误导 HR。
+          setWorkflowPartial({
+            message: wf?.results?.error || 'AI 评估中途异常，已保留已完成维度的结果',
+            error: wf?.results?.error,
+            failed_step: wf?.results?.failed_step,
+            assessed_dimensions: wf?.results?.assessed_dimensions || [],
+          });
+          setWorkflowProgress(wf?.progress ?? 0);
+          setWorkflowResult(null);
           setWorkflowWaiting(null);
         } else if (wf?.status === 'waiting_human') {
           const waitType = wf?.results?.interrupt?.type || wf?.current_step || '';
@@ -201,16 +216,30 @@ const CandidateDetail: React.FC = () => {
       if (result.status === 'waiting_human' || result.status === 'already_active') {
         // 工作流停在人工挂起点（问卷待作答 / 面试待录入），等待外部事件自动恢复
         setWorkflowResult(null);
+        setWorkflowPartial(null);
         setWorkflowWaiting({
           wait_type: result.wait_type || result.current_step || '',
           progress: result.progress || 0,
           message: result.message || '招聘流程进行中，等待人工环节完成',
         });
         setWorkflowProgress(result.progress || 0);
+      } else if (result.status === 'partial') {
+        // 异常中断：已完成的维度保留，提示 HR 人工评估或重跑
+        setWorkflowResult(null);
+        setWorkflowWaiting(null);
+        setWorkflowPartial({
+          message: result.message || 'AI 评估中途异常，已保留已完成维度的结果',
+          error: result.error,
+          failed_step: result.failed_step,
+          assessed_dimensions: result.assessed_dimensions || [],
+        });
+        setWorkflowProgress(0);
+        loadData(true);
       } else if (result.final_decision) {
         setWorkflowResult(result);
         setWorkflowProgress(100);
         setWorkflowWaiting(null);
+        setWorkflowPartial(null);
         loadData(true);
       }
     } catch (err: any) {
@@ -730,6 +759,32 @@ const CandidateDetail: React.FC = () => {
                       ? '在「智能问卷」中提交作答后自动推进'
                       : '在「面试管理」中录入面试结果后自动推进'}
                   </p>
+                </div>
+              ) : workflowPartial ? (
+                <div className="py-8">
+                  <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg p-4">
+                    <AlertTriangle className="text-amber-600 mt-0.5 shrink-0" size={20} />
+                    <div>
+                      <p className="text-sm font-medium text-amber-800">评估中途异常，已转人工</p>
+                      <p className="text-xs text-amber-700 mt-1">{workflowPartial.message}</p>
+                      {workflowPartial.failed_step && (
+                        <p className="text-xs text-slate-500 mt-1">
+                          中断环节：{workflowPartial.failed_step}
+                        </p>
+                      )}
+                      <p className="text-xs text-slate-500 mt-1">
+                        已完成的维度已保留（{workflowPartial.assessed_dimensions?.length || 0} 个），
+                        可直接人工评估，或在提高配置后重新运行。
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={runWorkflowHandler}
+                    disabled={runningWorkflow}
+                    className="mt-4 px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+                  >
+                    {runningWorkflow ? '分析中...' : '重新运行AI评估'}
+                  </button>
                 </div>
               ) : (
                 <div className="text-center py-12">
