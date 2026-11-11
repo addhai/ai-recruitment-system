@@ -24,8 +24,16 @@ class BudgetExceeded(RuntimeError):
     """成本预算耗尽。调用方应在发起请求前捕获并转人工。"""
 
 
-# 进程内累加缓存：每次都 SUM 全表太重，按 N 次回读一次数据库
+# 进程内累加缓存：每次都 SUM 全表太重，按 N 次回读一次数据库。
+# 口径：**窗口总额 = _db_spent（上次回读到的库内总额）+ _spent（回读之后本进程新增的）**。
+# 两者不重叠——回读时会把 _spent 里已落库的部分扣掉。
+# 落库是唯一事实源：每次调用都立刻写 llm_call_logs，所以回读到的数字里
+# 已经包含本进程那部分，再加一次就是同一笔钱算两次
+# （实测：预算 ¥5，真实只花到 ¥2.84 就触顶，因为读出来的是 ¥5.67）。
 _spent: float = 0.0
+# 上一次回读到的数据库窗口总额。非回读期间用它当历史底数——
+# 只看进程内累计会漏掉历史与其它进程的保护会形同虚设。
+_db_spent: float = 0.0
 # 累加值所属币种。币种一旦变化，旧累计值不能与新上限比较（¥ 与 $ 直接相加）
 _spent_currency: Optional[str] = None
 _calls_since_refresh: int = 0
@@ -81,7 +89,7 @@ async def add_spend(cost: float) -> None:
     检测到计价币种变化时清空进程内累计并强制下次回读：
     旧的累计值是另一种币种的金额，留着会与新上限混算。
     """
-    global _spent, _spent_currency, _calls_since_refresh, _never_read_db
+    global _spent, _db_spent, _spent_currency, _calls_since_refresh, _never_read_db
     cur = current_currency()
     async with _lock:
         if _spent_currency is not None and _spent_currency != cur:
@@ -91,6 +99,7 @@ async def add_spend(cost: float) -> None:
                 extra={"status": "budget_currency_changed",
                        "from_currency": _spent_currency, "to_currency": cur})
             _spent = 0.0
+            _db_spent = 0.0
             _calls_since_refresh = 0
             _never_read_db = True
         _spent_currency = cur
@@ -99,19 +108,27 @@ async def add_spend(cost: float) -> None:
 
 
 async def spent_in_window() -> float:
-    """返回当前窗口内已花成本 = 进程内累计 + 数据库回读。
+    """返回当前窗口内已花成本。
 
-    进程内累计覆盖本次启动以来的调用，数据库覆盖历史，两者相加即为窗口总量。
+    **口径**：`_db_spent`（上次回读到的库内总额）+ `_spent`（回读之后本进程新增的）。
+    两者**不重叠**——回读时会把 `_spent` 里已经落库的部分扣掉。
+
+    为什么不能"库内总额 + 进程内累计"直接相加：每次调用都会立刻落库，
+    库里的数字**已经包含**本进程那部分，再加一次就是同一笔钱算两次
+    （实测：预算 ¥5，真实只花到 ¥2.84 就触顶，因为读出来的是 ¥5.67）。
 
     **冷启动必须回读**：服务重启后进程内计数为 0，若此时直接返回 0，
     就会在"今天已经花掉上限"的情况下完全放行——保护等同失效。
     因此首次调用（或距上次回读超过 N 次）都强制查库。
 
+    **不回读时也要带历史底数**：只看进程内累计会漏掉历史与其它进程的花费，
+    保护会形同虚设（默认每 20 次才回读一次）。
+
     **只累加与当前计价币种一致的行**：上限是某个币种的金额，把其它币种的
     花费加进来等于拿 ¥ 和 $ 直接相加。被排除且金额非 0 的行会告警——
     静默排除会让预算少算，比不保护更危险（用户以为有保护，实际会超支）。
     """
-    global _spent, _calls_since_refresh, _never_read_db
+    global _spent, _db_spent, _calls_since_refresh, _never_read_db
 
     every = max(1, settings.LLM_BUDGET_REFRESH_EVERY)
     need_refresh = _never_read_db or _calls_since_refresh >= every
@@ -135,14 +152,20 @@ async def spent_in_window() -> float:
                 .scalar()
             )
             _warn_foreign_cost(db, window, cur)
-            return float(persisted or 0.0) + base
+            async with _lock:
+                # 回读到的数字已经包含 base 里的那些调用（它们早已落库），
+                # 所以要把 base 从进程内累计里扣掉，否则同一笔钱算两次。
+                # 只保留回读期间新产生的部分——那几笔可能还没落库。
+                _spent = max(0.0, _spent - base)
+                _db_spent = float(persisted or 0.0)
+            return _db_spent
         except Exception as e:
             logger.warning("回读预算失败，按进程内累计估算", extra={"error": str(e)[:200]})
-            return _spent
+            return _db_spent + _spent
         finally:
             db.close()
 
-    return _spent
+    return _db_spent + _spent
 
 
 def _warn_foreign_cost(db, window, cur: str) -> None:
@@ -207,9 +230,10 @@ async def check_budget() -> None:
 
 async def reset_cache_for_test() -> None:
     """测试用：清空进程内累加缓存并重置冷启动标记"""
-    global _spent, _spent_currency, _calls_since_refresh, _never_read_db
+    global _spent, _db_spent, _spent_currency, _calls_since_refresh, _never_read_db
     async with _lock:
         _spent = 0.0
+        _db_spent = 0.0
         _spent_currency = None
         _calls_since_refresh = 0
         _never_read_db = True
