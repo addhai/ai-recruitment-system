@@ -28,6 +28,24 @@ from pathlib import Path
 # 超过它就说明改动影响了评分本身，必须人工看，不许只看成本那一栏。
 SCORE_DRIFT_GATE = 10.0
 
+# dim_scores 的键 与 evaluated_dims 里的中文标签 的对应关系。
+#
+# 为什么需要这张表：`dim_scores` 里缺省的维度会被填成 0，
+# 而 0 有两种完全不同的含义——
+#   (a) 真的评估了并给了 0 分；
+#   (b) **根本没走到这一关**（例如早就在文化关卡被淘汰，问卷压根没生成）。
+# 两轮跑批如果"到达的关卡不同"，naive 的差值会把 (b) 当成 (a)，
+# 报出一个 ±50 分的"漂移"，而实际上一分都没漂——只是路径不同。
+# 所以必须先按 `evaluated_dims` 判断这一维到底评没评过，两侧都评过才比。
+DIM_LABELS = {
+    "skill": "技能匹配",
+    "experience": "经验匹配",
+    "education": "教育匹配",
+    "culture": "文化契合",
+    "questionnaire": "问卷测评",
+    "overall": "综合评审",
+}
+
 
 def _load(path: str) -> dict:
     p = Path(path)
@@ -108,17 +126,24 @@ def main() -> int:
 
     print("\n【四、分数漂移守门】")
     print(f"  同一份简历、同一维度，前后两次跑批的分差；阈值 {SCORE_DRIFT_GATE} 分。")
+    print("  只比**两侧都真正评估过**的维度：某一侧没走到这一关时分记 0，")
+    print("  那是路径不同，不是分数漂移。")
     bmap = {r.get("profile"): r for r in b.get("records", [])}
     amap = {r.get("profile"): r for r in a.get("records", [])}
     worst = 0.0
     drifts = []
+    skipped_path = []
     for profile in sorted(set(bmap) & set(amap)):
         rb, ra = bmap[profile], amap[profile]
         sb, sa = rb.get("dim_scores") or {}, ra.get("dim_scores") or {}
-        for dim in ("skill", "experience", "education", "culture",
-                    "questionnaire", "overall"):
+        eb = set(rb.get("evaluated_dims") or [])
+        ea = set(ra.get("evaluated_dims") or [])
+        for dim, label in DIM_LABELS.items():
             vb, va = sb.get(dim), sa.get(dim)
             if not isinstance(vb, (int, float)) or not isinstance(va, (int, float)):
+                continue
+            if label not in eb or label not in ea:
+                skipped_path.append((profile, dim, label in eb, label in ea, vb, va))
                 continue
             d = float(va) - float(vb)
             worst = max(worst, abs(d))
@@ -132,6 +157,13 @@ def main() -> int:
         for profile, dim, vb, va, d in sorted(drifts, key=lambda x: -abs(x[4]))[:10]:
             flag = "  <-- 超阈值" if abs(d) > SCORE_DRIFT_GATE else ""
             print(f"    {profile:<18}{dim:<14}{vb:>6} -> {va:>6}  ({d:+.1f}){flag}")
+        if not over:
+            print("  结论：没有维度漂移超过阈值。")
+    if skipped_path:
+        print(f"\n  因「一侧没走到该关卡」而未参与比对的维度 {len(skipped_path)} 处：")
+        for profile, dim, inb, ina, vb, va in skipped_path[:10]:
+            print(f"    {profile:<18}{dim:<14}before {'评过' if inb else '没走到'}"
+                  f"  after {'评过' if ina else '没走到'}  ({vb} / {va})")
 
     print("\n【五、样本与口径】")
     for label, o in (("before", ob), ("after", oa)):
