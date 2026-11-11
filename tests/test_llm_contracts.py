@@ -331,7 +331,14 @@ class TestRepairCallReallyRuns:
         logs = _logs_since(mark)
         repair = [l for l in logs if l.is_repair][-1]
         assert repair.status == "ok", f"修正调用仍然失败：{repair.error}"
-        assert repair.cost and repair.cost > 0, "修正调用有真实花费，必须记上"
+        # 断言**用量**被记下来了，而不是"花费 > 0"：
+        # 花费 = 用量 × 单价，而单价来自 `.env` 的配置。CI 里没有 `.env`，
+        # 单价为 0，cost 必然是 0——拿它当断言等于在测配置文件，
+        # 本地绿、CI 红，而且红了也说明不了代码有问题。
+        # 代码真正负责的是"把这次调用的用量如实记下来，别漏账"。
+        assert repair.input_tokens == 30 and repair.output_tokens == 20, \
+            f"修正调用的用量没记下来：in={repair.input_tokens} out={repair.output_tokens}"
+        assert repair.cost is not None, "花费字段至少要有值（0 也可以，取决于单价配置）"
 
     def test_repair_failure_is_recorded_with_real_cost(self, monkeypatch):
         """模型真的修不好时才记失败——并且要带上真实花费"""
@@ -355,4 +362,5 @@ class TestRepairCallReallyRuns:
         assert original.schema_fixed is False
         # 这次失败是"模型给出的仍不合规"，不是"模板炸了"
         assert repair.status == "ok"
-        assert repair.cost and repair.cost > 0
+        # 同前：断言用量，不断言花费（花费取决于 `.env` 里的单价，CI 没有）
+        assert repair.input_tokens == 30 and repair.output_tokens == 20
